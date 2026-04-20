@@ -1,5 +1,7 @@
-<svg width="222" height="177" viewBox="0 0 222 177" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect x="79.4902" y="82.5361" width="11.2611" height="79.4904" transform="rotate(90 79.4902 82.5361)" fill="#F5F5F5"/>
-<rect x="11.2637" y="138.181" width="11.2611" height="99.363" transform="rotate(-180 11.2637 138.181)" fill="#F5F5F5"/>
-<ellipse cx="134" cy="88.5" rx="88.5" ry="88" transform="rotate(90 134 88.5)" fill="#F5F5F5"/>
+<svg width="152" height="404" viewBox="0 0 152 404" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect x="66.6602" y="282.8" width="17.17" height="121.2" fill="#F5F5F5"/>
+<rect x="151.5" y="386.83" width="17.17" height="151.5" transform="rotate(90 151.5 386.83)" fill="#F5F5F5"/>
+<rect width="151.5" height="290.88" rx="75.75" fill="#F5F5F5"/>
+<circle cx="75.7502" cy="81.8098" r="51.51" fill="#262626"/>
+<circle cx="75.7502" cy="208.06" r="51.51" fill="#262626"/>
 </svg>
