@@ -7,6 +7,7 @@ from enum import Enum
 import numpy as np
 import pygame
 from pygame import Vector2
+from pygame.math import clamp
 
 from colors import Colors, Assets
 from entity import Entity
@@ -228,6 +229,7 @@ class Switch(Entity):
             if GridEdge(self.point, GridPoint(self.point.map, self.point.x + self.dx, self.point.y + dy)) in self.point.map.placed_rails
         ]
 
+TRAIN_STOP_DISTANCE = 45.0  # calibrated for acceleration 10, max speed 20
 
 @dataclass
 class Train(Entity):
@@ -235,10 +237,25 @@ class Train(Entity):
 
     current_rail: Rail
     current_delta: float = 0.0
-    speed: float = 20.0
+    max_speed: float = 20.0
+    current_speed: float = 0.0
+    acceleration: float = 10.0
 
     def update(self, delta_time: float):
-        self.current_delta += self.speed * delta_time
+        next_rail = self.current_rail.next_rail(dx=self.dx)
+        if next_rail is not None:
+            if (self.current_rail.length - self.current_delta) <= TRAIN_STOP_DISTANCE:
+                signal_direction = SignalType.FROM if next_rail.edge.dx == self.dx else SignalType.TO
+                red_signal = next_rail.signal_type == signal_direction and next_rail.signal_state == SignalState.RED
+            else:
+                red_signal = False
+        else:
+            red_signal = True  # no next rail, should stop
+
+        target_speed = 0.0 if red_signal else self.max_speed
+        self.current_speed = clamp(self.current_speed + np.sign(target_speed - self.current_speed) * self.acceleration * delta_time, 0.0, self.max_speed)
+
+        self.current_delta += self.current_speed * delta_time
         while self.current_delta > self.current_rail.length:
             self.current_delta -= self.current_rail.length
             next_rail = self.current_rail.next_rail(dx=self.dx)
@@ -263,7 +280,7 @@ class Train(Entity):
         tangent = tangent / np.linalg.norm(tangent)
 
         # interpolate with next tangent
-        turn_start_frac = 0.5
+        turn_start_frac = 0.8
         next_segment = self.current_rail.next_rail(dx=self.dx)
         if next_segment is not None and self.current_delta >= self.current_rail.length * turn_start_frac:
             next_tangent = next_segment.get_tangent(dx=self.dx)
