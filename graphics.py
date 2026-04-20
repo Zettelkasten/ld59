@@ -18,7 +18,7 @@ class GraphicsContext:
         self.offset = np.asarray([0.0, 0.0])
         self.scale = 1.0
 
-        self.debug_font = pygame.font.SysFont(None, 18)
+        self.font = pygame.font.Font("font.ttf", 22)
 
     def transform(self, offset: ArrayLike, scale: float):
         before_offset = self.offset.copy()

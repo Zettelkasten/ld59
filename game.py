@@ -41,7 +41,18 @@ class GameState:
 
         graphics = GraphicsContext(surface)
         g = GraphicsContext(outer_surface)
-        g.draw_line(color="green", start_pos=np.asarray([-20, 0]), end_pos=np.asarray([20, 0]), width=2)
+
+        # TODO, clean up font rendering
+        draw_font = g.font.render
+        font = draw_font(f"frittytracks", True, "white")
+        height_diff = 3
+        GraphicsContext(font).draw_aalines("white", True, [
+            [0, 3],
+            [font.get_width() - 1, 3],
+            [font.get_width() - 1, font.get_height() - 1 - height_diff],
+            [0, font.get_height() - 1 - height_diff],
+        ])
+        g.blit(font, np.asarray([(outer_surface.get_width() - font.get_width()) / 2, 50]))
 
         with graphics.scale_by(self.camera_scale * self.supersampling), graphics.translate(offset):
             self.render_inner(graphics)
