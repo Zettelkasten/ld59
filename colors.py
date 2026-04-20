@@ -9,6 +9,7 @@ class Colors:
     BACKGROUND_PLAYABLE = "#0A0A0A"
     SWITCH = "#874BFF"
     TRAIN = "#4BEDFF"
+    TRAIN_CRASHED = "#FF2222"
 
     BUILDING_SELECTED_POINT = "green"
     BUILDING_TRACK = "green"
@@ -35,6 +36,8 @@ class Assets:
         for name in ["anitkabir", "castle", "city", "dom", "factory", "forest", "hiking", "school", "ship"]
     }
 
+    EXPLOSIONS = [pygame.image.load(f"assets/explosion_{i}.svg") for i in range(3)]
+
     UI_DEFAULT = pygame.image.load("assets/ui_default.svg")
     UI_DEFAULT_ACTIVE = pygame.image.load("assets/ui_default_active.svg")
     UI_TRACK = pygame.image.load("assets/ui_track.svg")
@@ -43,5 +46,7 @@ class Assets:
     UI_SIGNAL_ACTIVE = pygame.image.load("assets/ui_signal_active.svg")
     UI_DEMOLISH = pygame.image.load("assets/ui_demolish.svg")
     UI_DEMOLISH_ACTIVE = pygame.image.load("assets/ui_demolish_active.svg")
+    UI_PAUSE = pygame.image.load("assets/ui_pause.svg")
+    UI_PLAY = pygame.image.load("assets/ui_play.svg")
     UI_SLOW = pygame.image.load("assets/ui_slow.svg")
     UI_FAST = pygame.image.load("assets/ui_fast.svg")

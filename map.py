@@ -250,6 +250,7 @@ class Train(Entity):
     destination: "Destination"
     max_waiting_time = 6.0
     remaining_waiting_time = max_waiting_time
+    crashed: bool = False
 
     def update(self, delta_time: float):
         next_rail = self.current_rail.next_rail(dx=self.dx)
@@ -264,7 +265,7 @@ class Train(Entity):
         else:
             red_signal = True  # no next rail, should stop
 
-        if self.remaining_waiting_time > 0 and red_signal and self.current_speed <= 0.01:
+        if self.remaining_waiting_time > 0 and red_signal and self.current_speed <= 0.01 and next_rail is not None:
             self.remaining_waiting_time -= delta_time
             if self.remaining_waiting_time <= 0:
                 # will go now
@@ -314,12 +315,17 @@ class Train(Entity):
         with graphics.translate(pos), graphics.scale_by(0.05):
             angle = math.atan2(-tangent[1], -tangent[0]) * 180 / math.pi + 180
             img = Assets.TRAIN
+            if self.crashed:
+                # make it red, and rotate it a bit
+                angle += self.current_rail.edge.map.game_state.global_time * 500
+                img = img.copy()
+                img.fill(Colors.TRAIN_CRASHED, special_flags=pygame.BLEND_RGBA_MULT)
             rot_img = pygame.transform.rotate(img, -angle)
             graphics.blit(rot_img, rot_img.get_rect(center=(0, 0)))
 
-        self.render_popup(graphics)
-
     def maybe_render_popup(self, graphics: GraphicsContext):
+        if self.current_rail.edge.map.game_state.game_over:
+            return
         self.render_popup(graphics)
 
     def render_popup(self, graphics: GraphicsContext):
@@ -400,6 +406,17 @@ class Map:
     def update(self, delta_time: float):
         for train in self.trains:
             train.update(delta_time * self.simulation_speed)
+
+        # check for explosion
+        rails_to_trains = {}
+        for train in self.trains:
+            if train.current_rail.edge not in rails_to_trains:
+                rails_to_trains[train.current_rail.edge] = train
+            else:
+                # explosion
+                other_train = rails_to_trains[train.current_rail.edge]
+                self.game_state.on_train_collision(train, other_train)
+
 
     def render(self, graphics: GraphicsContext):
         graphics.draw_polygon(

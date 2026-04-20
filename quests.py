@@ -104,13 +104,14 @@ class Quests:
             i += 1
             return icon
 
+        # sorted anti-clock wise
         self.off_map_destinations = {
-            "D": OffMapDestination.make_simple(map, dx=1, dy=0, y=2, name="D", marker_icon=next_marker_icon()),
-            "E": OffMapDestination.make_simple(map, dx=1, dy=0, y=7, name="E", marker_icon=next_marker_icon()),
-            "F": OffMapDestination.make_simple(map, dx=1, dy=1, y=10, name="F", marker_icon=next_marker_icon()),
             "A": OffMapDestination.make_simple(map, dx=-1, dy=-1, y=2, name="A", marker_icon=next_marker_icon()),
             "B": OffMapDestination.make_simple(map, dx=-1, dy=0, y=5, name="B", marker_icon=next_marker_icon()),
             "C": OffMapDestination.make_simple(map, dx=-1, dy=0, y=10, name="C", marker_icon=next_marker_icon()),
+            "D": OffMapDestination.make_simple(map, dx=1, dy=1, y=10, name="D", marker_icon=next_marker_icon()),
+            "E": OffMapDestination.make_simple(map, dx=1, dy=0, y=7, name="E", marker_icon=next_marker_icon()),
+            "F": OffMapDestination.make_simple(map, dx=1, dy=0, y=2, name="F", marker_icon=next_marker_icon()),
         }
         self.stage_min_scores = {
             1: 0,
@@ -120,6 +121,8 @@ class Quests:
         self.active_sources: list[OffMapDestination] = []
         self.active_destinations: list[Destination] = []
         self.current_stage = 0
+
+        self.last_active_source: None | OffMapDestination = None
 
     def advance_stage(self):
         self.current_stage += 1
@@ -139,13 +142,20 @@ class Quests:
             return False
 
         for destination in new_destinations:
+            if destination in self.active_destinations:
+                continue
             for rail in destination.out_rails:
                 self.map.place_rail(rail)
             self.active_destinations.append(destination)
         for source in new_sources:
+            if source in self.active_sources:
+                continue
             for rail in source.in_rails:
                 self.map.place_rail(rail)
             self.active_sources.append(source)
+
+        # resort the active sources
+        self.active_sources = list(sorted(self.active_sources, key=lambda s: s.name))
 
         return True
 
@@ -169,14 +179,27 @@ class Quests:
         for destination in set(self.active_destinations) | set(self.active_sources):
             destination.update(delta_time)
 
-        for source in self.active_sources:
-            if not source.has_spawned_train:
-                new_destination = self.find_destination(source.dx)
-                source.spawn_train(new_destination)
+        # spawn trains
+        self.maybe_spawn_trains()
 
         # maybe advance stage
         if self.map.game_state.score_correct_trains >= self.stage_min_scores.get(self.current_stage + 1, math.inf):
             self.advance_stage()
+
+    def maybe_spawn_trains(self):
+        for train in self.map.trains:
+            if train.remaining_waiting_time > 0:
+                return
+        if len(self.active_sources) == 0:
+            return
+        if self.last_active_source is None and len(self.active_sources) > 0:
+            self.last_active_source = self.active_sources[-1]
+        # get next active source
+        source = self.active_sources[(self.active_sources.index(self.last_active_source) + 1) % len(self.active_sources)]
+        print("NEXT ACTIVE SOURCE IS", source.name)
+        new_destination = self.find_destination(source.dx)
+        source.spawn_train(new_destination)
+        self.last_active_source = source
 
     def render(self, graphics: GraphicsContext):
         for destination in set(self.active_destinations) | set(self.active_sources):

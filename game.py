@@ -28,6 +28,10 @@ class GameState:
         self.ui_selected: int | None = None
 
         self.map = Map(self)
+        self.game_over = False
+        self.play_explosion_pos: None | np.ndarray = None
+
+        self.global_time = 0
 
         self.quests = Quests(self.map)
         # self.quests.advance_stage()
@@ -56,45 +60,68 @@ class GameState:
             self.render_ui(graphics, width=outer_surface.get_width(), height=outer_surface.get_height())
 
         surface = pygame.transform.smoothscale_by(surface, 1 / self.supersampling)
+
         outer_surface.blit(surface, (0, 0))
 
     def render_inner(self, graphics: GraphicsContext):
         self.map.render(graphics)
-        self.building_mode.render(graphics)
+        if not self.game_over:
+            self.building_mode.render(graphics)
         self.quests.render(graphics)
+
+        if self.play_explosion_pos is not None:
+            img = Assets.EXPLOSIONS[int(self.global_time * 3) % len(Assets.EXPLOSIONS)]
+            with graphics.translate(self.play_explosion_pos + [0, 30]), graphics.scale_by(0.5):
+                graphics.blit(img, dest=img.get_rect(bottom=0, centerx=0))
+
         self.map.render_ui(graphics)
 
     def render_ui(self, graphics: GraphicsContext, width: float, height: float):
-
-        button_size = 100.0
+        is_paused = self.map.simulation_speed == 0.0
         is_fast = self.map.simulation_speed > 1.0
         uis = [
-            (Assets.UI_DEFAULT, Assets.UI_DEFAULT_ACTIVE, isinstance(self.building_mode, SwitchSignalsAndSwitches), "Set signals and switch track junctions"),
-            (Assets.UI_TRACK,Assets.UI_TRACK_ACTIVE,  isinstance(self.building_mode, BuildRails), "Lay more track"),
-            (Assets.UI_SIGNAL, Assets.UI_SIGNAL_ACTIVE, isinstance(self.building_mode, BuildSignals), "Build and remove signals"),
-            (Assets.UI_DEMOLISH, Assets.UI_DEMOLISH_ACTIVE, False, "Demolish stuff"),
-            (Assets.UI_SLOW, Assets.UI_FAST, is_fast, "Back to slow" if is_fast else "Let there be speed"),
+            (Assets.UI_DEFAULT, Assets.UI_DEFAULT_ACTIVE, isinstance(self.building_mode, SwitchSignalsAndSwitches), 0.0, "set signals and switch track junctions"),
+            (Assets.UI_TRACK,Assets.UI_TRACK_ACTIVE,  isinstance(self.building_mode, BuildRails), 100.0, "lay some track"),
+            (Assets.UI_SIGNAL, Assets.UI_SIGNAL_ACTIVE, isinstance(self.building_mode, BuildSignals), 100.0, "build and remove signals"),
+            (Assets.UI_DEMOLISH, Assets.UI_DEMOLISH_ACTIVE, False, 120.0, "demolish stuff"),
+            (Assets.UI_SLOW, Assets.UI_FAST, is_fast, 120.0, "back to slow" if is_fast else "let there be speed"),
+            (Assets.UI_PLAY, Assets.UI_PAUSE, is_paused, 100.0, "continue" if is_paused else "take a break"),
         ]
-        self.ui_selected = None
-        with graphics.translate([(width - (len(uis) - 1) * button_size) / 2, height - 100]):
-            for i, (ui, active_ui, is_active, _) in enumerate(uis):
-                with graphics.translate([i * button_size, 0]), graphics.scale_by(0.15):
-                    if graphics.is_in_area(self.mouse_pos, ui.get_rect(center=(0, 0))):
-                        self.ui_selected = i
-                    if is_active or self.ui_selected == i:
-                        ui = active_ui
-                        # ui.fill(active_color, special_flags=pygame.BLEND_RGBA_MULT)
-                    graphics.blit(ui, dest=ui.get_rect(center=(0, 0)))
+        total_width = sum(button_width for _, _, _, button_width, _ in uis)
 
-        title_text = "frittytracks"
+        self.ui_selected = None
+        if not self.game_over:
+            with graphics.translate([(width - total_width) / 2, height - 100]):
+                offset_x = 0
+                for i, (ui, active_ui, is_active, button_width, _) in enumerate(uis):
+                    offset_x += button_width
+                    with graphics.translate([offset_x, 0]), graphics.scale_by(0.15):
+                        if graphics.is_in_area(self.mouse_pos, ui.get_rect(center=(0, 0))):
+                            self.ui_selected = i
+                        if is_active or self.ui_selected == i:
+                            ui = active_ui
+                            # ui.fill(active_color, special_flags=pygame.BLEND_RGBA_MULT)
+                        graphics.blit(ui, dest=ui.get_rect(center=(0, 0)))
+        else:
+            # game over, render restart button
+            drawn_font = graphics.draw_text("Click here to try again", pos=np.asarray([width / 2, height - 100]), font_name="assets/font.ttf", font_size=22, color="white", align="center")
+            if graphics.is_in_area(self.mouse_pos, drawn_font.get_rect(center=(width / 2, height - 100))):
+                self.ui_selected = 0
+
+        title_text = "switch happens"
         if self.ui_selected is not None:
-            _, _, _, tooltip = uis[self.ui_selected]
+            _, _, _, _, tooltip = uis[self.ui_selected]
             title_text = tooltip
+        if self.game_over:
+            title_text = "game over! your trains have crashed!"
         graphics.draw_text(title_text, pos=np.asarray([width / 2, 50]), font_name="assets/font.ttf", font_size=22, color="white")
         graphics.draw_text(
-            f"Score: {self.score_correct_trains}", pos=np.asarray([width - 75 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="right")
+            f"score: {self.score_correct_trains}", pos=np.asarray([width - 100 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="right")
 
     def update(self, delta_time: float):
+        self.global_time += delta_time
+        if self.game_over:
+            return
         self.map.update(delta_time)
         self.quests.update(delta_time)
 
@@ -104,19 +131,25 @@ class GameState:
     def on_click(self, event: Event):
         self.mouse_pos = np.asarray(event.pos) * self.supersampling
 
-        self.building_mode.on_click()
+        if not self.game_over:
+            self.building_mode.on_click()
 
         if self.ui_selected is not None:
-            if self.ui_selected == 0:
-                self.building_mode = SwitchSignalsAndSwitches(self)
-            elif self.ui_selected == 1:
-                self.building_mode = BuildRails(self)
-            elif self.ui_selected == 2:
-                self.building_mode = BuildSignals(self)
-            elif self.ui_selected == 3:
-                pass  # not implemented?
-            elif self.ui_selected == 4:
-                self.map.simulation_speed = 8.0 if self.map.simulation_speed == 1.0 else 1.0
+            if not self.game_over:
+                if self.ui_selected == 0:
+                    self.building_mode = SwitchSignalsAndSwitches(self)
+                elif self.ui_selected == 1:
+                    self.building_mode = BuildRails(self)
+                elif self.ui_selected == 2:
+                    self.building_mode = BuildSignals(self)
+                elif self.ui_selected == 3:
+                    pass  # not implemented?
+                elif self.ui_selected == 4:
+                    self.map.simulation_speed = 8.0 if self.map.simulation_speed == 1.0 else 1.0
+                elif self.ui_selected == 5:
+                    self.map.simulation_speed = 0.0 if self.map.simulation_speed != 0.0 else 1.0
+            else:
+                self.reset_game()
 
     @property
     def mouse_pos_inv_camera(self):
@@ -174,6 +207,8 @@ class GameState:
             return None
 
     def on_key_down(self, event):
+        if self.game_over:
+            return
         if event.key == pygame.K_ESCAPE:
             self.on_escape()
         elif event.key == pygame.K_q or event.key == pygame.K_1:
@@ -184,7 +219,9 @@ class GameState:
             self.building_mode = BuildSignals(self)
         elif event.key == pygame.K_r or event.key == pygame.K_4:
             pass
-        elif event.key == pygame.K_t:
+        elif event.key == pygame.K_t or event.key == pygame.K_5 or event.key == pygame.K_SPACE:
+            self.map.simulation_speed = 0.0 if self.map.simulation_speed != 0.0 else 1.0
+        elif event.key == pygame.K_y or event.key == pygame.K_z or event.key == pygame.K_6:
             self.map.simulation_speed = 8.0 if self.map.simulation_speed == 1.0 else 1.0
         elif event.key == pygame.K_s and (pygame.key.get_mods() & pygame.KMOD_CTRL):
             self.save_map()
@@ -205,6 +242,14 @@ class GameState:
             self.score_correct_trains += 1
         self.map.trains.remove(train)
 
+    def on_train_collision(self, train: Train, other_train: Train):
+        train.crashed = True
+        other_train.crashed = True
+        self.game_over = True
+        self.map.simulation_speed = 0
+        pos = (train.current_pos() + other_train.current_pos()) / 2
+        self.play_explosion_pos = pos
+
     def save_map(self):
         print("saving")
         pickle.dump(self.map, open("map.pkl", "wb"))
@@ -215,3 +260,6 @@ class GameState:
             return True
         else:
             return False
+
+    def reset_game(self):
+        self.__init__()
