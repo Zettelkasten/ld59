@@ -10,7 +10,7 @@ from pygame.event import Event
 from building import BuildRails, BuildSignals, SwitchSignalsAndSwitches
 from colors import Colors, Assets
 from graphics import GraphicsContext
-from map import Map, GridEdge, GridPoint, Rail, SignalType, Switch, Train
+from map import Map, GridPoint, Rail, SignalType, Switch, Train
 from quests import Quests
 
 import better_exchook
@@ -22,23 +22,16 @@ class GameState:
         self.score_correct_trains = 0
         self.supersampling = 2
         self.camera_scale = 1.0
-        self.camera_offset = np.asarray([75.0, 100.0])
+        self.camera_offset = np.asarray([100.0, 100.0])
 
         self.mouse_pos = np.asarray([0.0, 0.0])
+        self.ui_selected: int | None = None
 
         self.map = Map(self)
-        # initial rails
-        if not self.load_map():
-            self.reset_map()
 
         self.quests = Quests(self.map)
-        self.quests.advance_stage()
-
-        # initial train
-        # initial_rail = self.map.placed_rails[GridEdge(GridPoint(self.map, -2, 2), GridPoint(self.map, -1, 2))]
-        # train = Train(dx=1, current_rail=initial_rail)
-        # train.current_speed = train.max_speed
-        # self.map.trains.append(train)
+        # self.quests.advance_stage()
+        self.quests.add_all()
 
         # building mode
         self.building_mode = BuildRails(self)
@@ -51,7 +44,7 @@ class GameState:
         offset = self.camera_offset
 
         # adjust camera scale to fit picture
-        self.camera_scale = outer_surface.get_width() * self.supersampling / ((self.map.GRID_WIDTH + 2) * self.map.DIST)
+        self.camera_scale = outer_surface.get_width() * self.supersampling / ((self.map.GRID_WIDTH + 3) * self.map.DIST)
 
         graphics = GraphicsContext(surface)
         g = GraphicsContext(outer_surface)
@@ -69,41 +62,65 @@ class GameState:
         self.map.render(graphics)
         self.building_mode.render(graphics)
         self.quests.render(graphics)
+        self.map.render_ui(graphics)
 
     def render_ui(self, graphics: GraphicsContext, width: float, height: float):
-        graphics.draw_text("frittytracks", pos=np.asarray([width / 2, 50]), font_name="assets/font.ttf", font_size=22, color="white")
-        graphics.draw_text(
-            f"Score: {self.score_correct_trains}", pos=np.asarray([width - 75, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="right")
 
         button_size = 100.0
+        is_fast = self.map.simulation_speed > 1.0
         uis = [
-            Assets.UI_DEFAULT,
-            Assets.UI_TRACK,
-            Assets.UI_SIGNAL,
-            Assets.UI_DEMOLISH,
-            Assets.UI_FAST,
+            (Assets.UI_DEFAULT, Assets.UI_DEFAULT_ACTIVE, isinstance(self.building_mode, SwitchSignalsAndSwitches), "Set signals and switch track junctions"),
+            (Assets.UI_TRACK,Assets.UI_TRACK_ACTIVE,  isinstance(self.building_mode, BuildRails), "Lay more track"),
+            (Assets.UI_SIGNAL, Assets.UI_SIGNAL_ACTIVE, isinstance(self.building_mode, BuildSignals), "Build and remove signals"),
+            (Assets.UI_DEMOLISH, Assets.UI_DEMOLISH_ACTIVE, False, "Demolish stuff"),
+            (Assets.UI_SLOW, Assets.UI_FAST, is_fast, "Back to slow" if is_fast else "Let there be speed"),
         ]
-        # TODO make them clickable
+        self.ui_selected = None
         with graphics.translate([(width - (len(uis) - 1) * button_size) / 2, height - 100]):
-            for i, ui in enumerate(uis):
+            for i, (ui, active_ui, is_active, _) in enumerate(uis):
                 with graphics.translate([i * button_size, 0]), graphics.scale_by(0.15):
+                    if graphics.is_in_area(self.mouse_pos, ui.get_rect(center=(0, 0))):
+                        self.ui_selected = i
+                    if is_active or self.ui_selected == i:
+                        ui = active_ui
+                        # ui.fill(active_color, special_flags=pygame.BLEND_RGBA_MULT)
                     graphics.blit(ui, dest=ui.get_rect(center=(0, 0)))
+
+        title_text = "frittytracks"
+        if self.ui_selected is not None:
+            _, _, _, tooltip = uis[self.ui_selected]
+            title_text = tooltip
+        graphics.draw_text(title_text, pos=np.asarray([width / 2, 50]), font_name="assets/font.ttf", font_size=22, color="white")
+        graphics.draw_text(
+            f"Score: {self.score_correct_trains}", pos=np.asarray([width - 75 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="right")
 
     def update(self, delta_time: float):
         self.map.update(delta_time)
         self.quests.update(delta_time)
 
     def on_motion(self, event: Event):
-        self.mouse_pos = event.pos
+        self.mouse_pos = np.asarray(event.pos) * self.supersampling
 
     def on_click(self, event: Event):
-        self.mouse_pos = event.pos
+        self.mouse_pos = np.asarray(event.pos) * self.supersampling
 
         self.building_mode.on_click()
 
+        if self.ui_selected is not None:
+            if self.ui_selected == 0:
+                self.building_mode = SwitchSignalsAndSwitches(self)
+            elif self.ui_selected == 1:
+                self.building_mode = BuildRails(self)
+            elif self.ui_selected == 2:
+                self.building_mode = BuildSignals(self)
+            elif self.ui_selected == 3:
+                pass  # not implemented?
+            elif self.ui_selected == 4:
+                self.map.simulation_speed = 8.0 if self.map.simulation_speed == 1.0 else 1.0
+
     @property
     def mouse_pos_inv_camera(self):
-        return np.asarray(self.mouse_pos) / self.camera_scale - self.camera_offset
+        return np.asarray(self.mouse_pos) / (self.camera_scale * self.supersampling) - self.camera_offset
 
     def get_grid_point_at_mouse(self) -> GridPoint:
         grid_pos = self.map.pos_to_grid(self.mouse_pos_inv_camera)
@@ -159,14 +176,16 @@ class GameState:
     def on_key_down(self, event):
         if event.key == pygame.K_ESCAPE:
             self.on_escape()
-        elif event.key == pygame.K_0:
+        elif event.key == pygame.K_q or event.key == pygame.K_1:
             self.building_mode = SwitchSignalsAndSwitches(self)
-        elif event.key == pygame.K_1:
+        elif event.key == pygame.K_w or event.key == pygame.K_2:
             self.building_mode = BuildRails(self)
-        elif event.key == pygame.K_2:
+        elif event.key == pygame.K_e or event.key == pygame.K_3:
             self.building_mode = BuildSignals(self)
-        elif event.key == pygame.K_9:
-            self.map.simulation_speed = 5.0 if self.map.simulation_speed == 1.0 else 1.0
+        elif event.key == pygame.K_r or event.key == pygame.K_4:
+            pass
+        elif event.key == pygame.K_t:
+            self.map.simulation_speed = 8.0 if self.map.simulation_speed == 1.0 else 1.0
         elif event.key == pygame.K_s and (pygame.key.get_mods() & pygame.KMOD_CTRL):
             self.save_map()
         elif event.key == pygame.K_r and (pygame.key.get_mods() & pygame.KMOD_CTRL):
@@ -196,8 +215,3 @@ class GameState:
             return True
         else:
             return False
-
-    def reset_map(self):
-        self.map = Map(self)
-        # self.map.place_rail(Rail(GridEdge(GridPoint(self.map, -2, 2), GridPoint(self.map, -1, 2))))
-        # self.map.place_rail(Rail(GridEdge(GridPoint(self.map, -1, 2), GridPoint(self.map, 0, 2)), signal_type=SignalType.FROM))

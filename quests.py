@@ -13,6 +13,11 @@ from map import Map, GridEdge, Rail, GridPoint, SignalType, Train, SignalState
 
 @dataclass
 class Destination(ABC):
+    map: Map
+    name: str
+    marker_pos: np.ndarray
+    marker_icon: pygame.Surface
+
     @abstractmethod
     def render(self, graphics: GraphicsContext):
         raise NotImplementedError()
@@ -27,13 +32,9 @@ class OnMapDestination(Destination):
 
 @dataclass
 class OffMapDestination(Destination):
-    map: Map
     dx: int
     in_rails: list[Rail]
     out_rails: list[Rail]
-    name: str
-    marker_pos: np.ndarray
-    marker_icon: pygame.Surface
 
     has_spawned_train: Train | None = None
 
@@ -80,7 +81,7 @@ class OffMapDestination(Destination):
                 Rail(GridEdge(GridPoint(map, -1 * dx + x, y + dy * 1), GridPoint(map, 0 * dx + x, y + dy * 0)), signal_type=SignalType.TO),
             ],
             name=name,
-            marker_pos=map.grid_to_pos_float(-0.75 * dx + x, y - 1.5 + min(dx, 0) + dy),
+            marker_pos=map.grid_to_pos_float(-1 * dx + x, y - 1.5 + min(dx, 0) + dy),
             marker_icon=marker_icon,
         )
 

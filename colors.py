@@ -14,7 +14,13 @@ class Colors:
     BUILDING_TRACK = "green"
     BUILDING_SIGNAL = "green"
 
-    FONT = "white"
+    UI_ACTIVE = "red"
+
+    FONT = "#F5F5F5"
+
+    POPUP_BACKGROUND = "#262626"
+    POPUP_BORDER = "#F5F5F5"
+
 
 
 class Assets:
@@ -30,8 +36,12 @@ class Assets:
     }
 
     UI_DEFAULT = pygame.image.load("assets/ui_default.svg")
+    UI_DEFAULT_ACTIVE = pygame.image.load("assets/ui_default_active.svg")
     UI_TRACK = pygame.image.load("assets/ui_track.svg")
+    UI_TRACK_ACTIVE = pygame.image.load("assets/ui_track_active.svg")
     UI_SIGNAL = pygame.image.load("assets/ui_signal.svg")
+    UI_SIGNAL_ACTIVE = pygame.image.load("assets/ui_signal_active.svg")
     UI_DEMOLISH = pygame.image.load("assets/ui_demolish.svg")
+    UI_DEMOLISH_ACTIVE = pygame.image.load("assets/ui_demolish_active.svg")
     UI_SLOW = pygame.image.load("assets/ui_slow.svg")
     UI_FAST = pygame.image.load("assets/ui_fast.svg")

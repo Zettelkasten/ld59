@@ -122,3 +122,11 @@ class GraphicsContext:
             assert False, align
         self.surface.blit(font, self.scale * pos + self.offset - offset)
 
+    def is_in_area(self, pos: ArrayLike, rect: Rect):
+        topleft = np.asarray(rect.topleft)
+        bottomright = np.asarray(rect.bottomright)
+        topleft = self.scale * topleft + self.offset
+        bottomright = self.scale * bottomright + self.offset
+        pos = np.asarray(pos)
+        return topleft[0] <= pos[0] <= bottomright[0] and topleft[1] <= pos[1] <= bottomright[1]
+

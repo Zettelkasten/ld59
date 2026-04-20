@@ -237,7 +237,7 @@ class Switch(Entity):
 
 TRAIN_STOP_DISTANCE = 45.0  # calibrated for acceleration 10, max speed 20
 
-@dataclass
+@dataclass(kw_only=True)
 class Train(Entity):
     dx: int
 
@@ -247,7 +247,9 @@ class Train(Entity):
     current_speed: float = 0.0
     acceleration: float = 10.0
 
-    destination: "Destination" | None = None
+    destination: "Destination"
+    max_waiting_time = 6.0
+    remaining_waiting_time = max_waiting_time
 
     def update(self, delta_time: float):
         next_rail = self.current_rail.next_rail(dx=self.dx)
@@ -261,6 +263,13 @@ class Train(Entity):
             red_signal = False
         else:
             red_signal = True  # no next rail, should stop
+
+        if self.remaining_waiting_time > 0 and red_signal and self.current_speed <= 0.01:
+            self.remaining_waiting_time -= delta_time
+            if self.remaining_waiting_time <= 0:
+                # will go now
+                self.remaining_waiting_time = 0.0
+                next_rail.signal_state = SignalState.GREEN
 
         target_speed = 0.0 if red_signal else self.max_speed
         self.current_speed = clamp(self.current_speed + np.sign(target_speed - self.current_speed) * self.acceleration * delta_time, 0.0, self.max_speed)
@@ -278,7 +287,7 @@ class Train(Entity):
                     self.current_rail.edge.map.game_state.on_train_reach_destination(self)
                 break
 
-    def render(self, graphics: GraphicsContext):
+    def current_pos(self):
         edge = self.current_rail.edge
         if edge.dx != self.dx:
             edge = edge.flipped()
@@ -286,10 +295,13 @@ class Train(Entity):
         edge_start_pos = edge.map.grid_to_pos(edge.from_point)
         edge_end_pos = edge.map.grid_to_pos(edge.to_point)
         pos = edge_start_pos + (edge_end_pos - edge_start_pos) * (self.current_delta / self.current_rail.length)
+        return pos
+
+    def render(self, graphics: GraphicsContext):
+        pos = self.current_pos()
         # graphics.draw_circle(Colors.TRAIN, pos, 10)
 
-        tangent = edge_end_pos - edge_start_pos
-        tangent = tangent / np.linalg.norm(tangent)
+        tangent = self.current_rail.get_tangent(dx=self.dx)
 
         # interpolate with next tangent
         turn_start_frac = 0.8
@@ -304,6 +316,54 @@ class Train(Entity):
             img = Assets.TRAIN
             rot_img = pygame.transform.rotate(img, -angle)
             graphics.blit(rot_img, rot_img.get_rect(center=(0, 0)))
+
+        self.render_popup(graphics)
+
+    def maybe_render_popup(self, graphics: GraphicsContext):
+        self.render_popup(graphics)
+
+    def render_popup(self, graphics: GraphicsContext):
+        popup_dx = 1 if self.current_rail.edge.from_point.x < self.current_rail.edge.map.GRID_WIDTH / 2 else -1
+        popup_offset = np.array([popup_dx * 30, -70])
+        popup_width = 50
+        popup_height = 50
+        box_offset = self.current_pos() + popup_offset
+
+        points = np.asarray([
+            [0, popup_height],
+            [0, 0],
+            [popup_width, 0],
+            [popup_width, popup_height],
+        ]) + box_offset[None, :]
+        graphics.draw_polygon(Colors.POPUP_BACKGROUND, points)
+
+        line_to = self.current_pos() + popup_offset + [0, popup_height]
+        arrow_vector = line_to - self.current_pos()
+        arrow_vector = arrow_vector / np.linalg.norm(arrow_vector)
+        arrow_points = line_to - arrow_vector * 5, line_to - arrow_vector * 15
+
+        lines = [arrow_points] + list(zip(points, list(points[1:]) + list(points[:1])))
+        line_lengths = [np.linalg.norm(to_point - from_point) for from_point, to_point in lines]
+        rel_line_lengths = np.asarray(line_lengths) / np.sum(line_lengths)
+
+        waiting_frac = 1 - self.remaining_waiting_time / self.max_waiting_time
+        drawn_frac = 0
+
+        for (from_point, to_point), rel_line_length in zip(lines, rel_line_lengths):
+            if waiting_frac <= drawn_frac:
+                continue
+            if waiting_frac <= drawn_frac + rel_line_length:
+                # draw part of the line
+                dt = (waiting_frac - drawn_frac) / rel_line_length
+                to_point = from_point + dt * (to_point - from_point)
+            drawn_frac += rel_line_length
+            graphics.draw_line(Colors.POPUP_BORDER, from_point, to_point, width=3)
+
+        # draw the destination icon
+        dest_icon = self.destination.marker_icon
+        with graphics.translate(box_offset + [popup_width / 2, popup_height / 2]), graphics.scale_by(0.12):
+            graphics.blit(dest_icon, dest_icon.get_rect(center=(0, 0)))
+
 
 
 class Map:
@@ -355,6 +415,10 @@ class Map:
             switch.render(graphics)
         for train in self.trains:
             train.render(graphics)
+
+    def render_ui(self, graphics: GraphicsContext):
+        for train in self.trains:
+            train.maybe_render_popup(graphics)
 
     def get_edges_between(self, from_point: GridPoint, to_point: GridPoint) -> list[GridEdge]:
         # greedy implementation
