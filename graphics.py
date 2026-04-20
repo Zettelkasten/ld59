@@ -110,5 +110,6 @@ class GraphicsContext:
             [font.get_width() - 1, font.get_height() - 1 - height_diff],
             [0, font.get_height() - 1 - height_diff],
         ])
+        pos = np.asarray(pos)
         self.surface.blit(font, self.scale * pos + self.offset - np.asarray([font.get_width() / 2, font.get_height() / 2]))
 

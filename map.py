@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pygame
@@ -14,6 +15,9 @@ from entity import Entity
 
 from graphics import GraphicsContext
 from math2d import rotate_90deg
+
+if TYPE_CHECKING:
+    from quests import Destination
 
 ALLOWED_EDGE_DIFFS = {
     (-1, 0), (-1, -1), (-1, 1),
@@ -108,6 +112,7 @@ class Rail(Entity):
     edge: GridEdge
     signal_type: SignalType = SignalType.NONE
     signal_state: SignalState = SignalState.RED
+    is_destination: bool = False
 
     @property
     def length(self):
@@ -241,6 +246,8 @@ class Train(Entity):
     current_speed: float = 0.0
     acceleration: float = 10.0
 
+    destination: "Destination" | None = None
+
     def update(self, delta_time: float):
         next_rail = self.current_rail.next_rail(dx=self.dx)
         if next_rail is not None:
@@ -249,6 +256,8 @@ class Train(Entity):
                 red_signal = next_rail.signal_type == signal_direction and next_rail.signal_state == SignalState.RED
             else:
                 red_signal = False
+        elif self.current_rail.is_destination:
+            red_signal = False
         else:
             red_signal = True  # no next rail, should stop
 
@@ -264,6 +273,8 @@ class Train(Entity):
             else:
                 # cannot go further
                 self.current_delta = self.current_rail.length
+                if self.current_rail.is_destination:
+                    self.current_rail.edge.map.game_state.on_train_reach_destination(self)
                 break
 
     def render(self, graphics: GraphicsContext):
@@ -306,10 +317,12 @@ class Map:
     GRID_WIDTH = 18
     GRID_HEIGHT = 12
 
-    def __init__(self):
+    def __init__(self, game_state: "GameState"):
+        self.game_state = game_state
         self.placed_rails: dict[GridEdge, Rail] = {}
         self.switches: dict[tuple[GridPoint, int], Switch] = {}  # (point, dx) -> switch
         self.trains: list[Train] = []
+        self.simulation_speed = 1.0
 
     def grid_to_pos(self, point: GridPoint) -> np.ndarray:
         return point.x * self.RIGHT + point.y * self.DOWN
@@ -325,7 +338,7 @@ class Map:
 
     def update(self, delta_time: float):
         for train in self.trains:
-            train.update(delta_time)
+            train.update(delta_time * self.simulation_speed)
 
     def render(self, graphics: GraphicsContext):
         graphics.draw_polygon(

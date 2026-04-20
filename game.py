@@ -16,19 +16,20 @@ from quests import Quests
 
 class GameState:
     def __init__(self):
+        self.score_correct_trains = 0
         self.supersampling = 2
         self.camera_scale = 1.0
         self.camera_offset = np.asarray([75.0, 100.0])
 
         self.mouse_pos = np.asarray([0.0, 0.0])
 
-        self.map = Map()
+        self.map = Map(self)
         # initial rails
         if not self.load_map():
             self.reset_map()
 
         self.quests = Quests(self.map)
-        self.quests.add_all()
+        self.quests.advance_stage()
 
         # initial train
         # initial_rail = self.map.placed_rails[GridEdge(GridPoint(self.map, -2, 2), GridPoint(self.map, -1, 2))]
@@ -49,7 +50,7 @@ class GameState:
         graphics = GraphicsContext(surface)
         g = GraphicsContext(outer_surface)
 
-        g.draw_text("frittytracks", pos=np.asarray([outer_surface.get_width() / 2, 50]), font_name="font.ttf", font_size=22, color="white")
+        g.draw_text("frittytracks", pos=np.asarray([outer_surface.get_width() / 2, 50]), font_name="assets/font.ttf", font_size=22, color="white")
 
         with graphics.scale_by(self.supersampling):
             with graphics.scale_by(self.camera_scale), graphics.translate(offset):
@@ -78,11 +79,11 @@ class GameState:
             for i, ui in enumerate(uis):
                 with graphics.translate([i * button_size, 0]), graphics.scale_by(0.15):
                     graphics.blit(ui, dest=ui.get_rect(center=(0, 0)))
-
-
+            graphics.draw_text(f"Score: {self.score_correct_trains}", pos=[0, -50], font_name="assets/font.ttf", font_size=22, color="white")
 
     def update(self, delta_time: float):
         self.map.update(delta_time)
+        self.quests.update(delta_time)
 
     def on_motion(self, event: Event):
         self.mouse_pos = event.pos
@@ -156,6 +157,8 @@ class GameState:
             self.building_mode = BuildRails(self)
         elif event.key == pygame.K_2:
             self.building_mode = BuildSignals(self)
+        elif event.key == pygame.K_9:
+            self.map.simulation_speed = 5.0 if self.map.simulation_speed == 1.0 else 1.0
         elif event.key == pygame.K_s and (pygame.key.get_mods() & pygame.KMOD_CTRL):
             self.save_map()
         elif event.key == pygame.K_r and (pygame.key.get_mods() & pygame.KMOD_CTRL):
@@ -163,6 +166,17 @@ class GameState:
 
     def on_escape(self):
         self.building_mode.__init__(self)
+
+    def on_train_reach_destination(self, train: Train):
+        from quests import OffMapDestination
+        if not isinstance(train.destination, OffMapDestination):
+            right_destination = False
+        else:
+            right_destination = train.current_rail in train.destination.out_rails
+        print("That was the right destination?", right_destination)
+        if right_destination:
+            self.score_correct_trains += 1
+        self.map.trains.remove(train)
 
     def save_map(self):
         print("saving")
@@ -176,6 +190,6 @@ class GameState:
             return False
 
     def reset_map(self):
-        self.map = Map()
+        self.map = Map(self)
         # self.map.place_rail(Rail(GridEdge(GridPoint(self.map, -2, 2), GridPoint(self.map, -1, 2))))
         # self.map.place_rail(Rail(GridEdge(GridPoint(self.map, -1, 2), GridPoint(self.map, 0, 2)), signal_type=SignalType.FROM))
