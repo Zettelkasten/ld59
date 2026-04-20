@@ -3,18 +3,20 @@ import pickle
 
 import numpy as np
 import pygame
+from numpy.ma.core import outer
 from pygame import Surface
 from pygame.event import Event
 
 from building import BuildRails, BuildSignals, SwitchSignalsAndSwitches
-from colors import Colors
+from colors import Colors, Assets
 from graphics import GraphicsContext
 from map import Map, GridEdge, GridPoint, Rail, SignalType, Switch, Train
+from quests import Quests
 
 
 class GameState:
     def __init__(self):
-        self.supersampling = 4
+        self.supersampling = 2
         self.camera_scale = 1.0
         self.camera_offset = np.asarray([75.0, 100.0])
 
@@ -25,9 +27,14 @@ class GameState:
         if not self.load_map():
             self.reset_map()
 
+        self.quests = Quests(self.map)
+        self.quests.add_all()
+
         # initial train
-        initial_rail = self.map.placed_rails[GridEdge(GridPoint(self.map, -2, 2), GridPoint(self.map, -1, 2))]
-        self.map.trains.append(Train(dx=1, current_rail=initial_rail))
+        # initial_rail = self.map.placed_rails[GridEdge(GridPoint(self.map, -2, 2), GridPoint(self.map, -1, 2))]
+        # train = Train(dx=1, current_rail=initial_rail)
+        # train.current_speed = train.max_speed
+        # self.map.trains.append(train)
 
         # building mode
         self.building_mode = BuildRails(self)
@@ -42,20 +49,13 @@ class GameState:
         graphics = GraphicsContext(surface)
         g = GraphicsContext(outer_surface)
 
-        # TODO, clean up font rendering
-        draw_font = g.font.render
-        font = draw_font(f"frittytracks", True, "white")
-        height_diff = 3
-        GraphicsContext(font).draw_aalines("white", True, [
-            [0, 3],
-            [font.get_width() - 1, 3],
-            [font.get_width() - 1, font.get_height() - 1 - height_diff],
-            [0, font.get_height() - 1 - height_diff],
-        ])
-        g.blit(font, np.asarray([(outer_surface.get_width() - font.get_width()) / 2, 50]))
+        g.draw_text("frittytracks", pos=np.asarray([outer_surface.get_width() / 2, 50]), font_name="font.ttf", font_size=22, color="white")
 
-        with graphics.scale_by(self.camera_scale * self.supersampling), graphics.translate(offset):
-            self.render_inner(graphics)
+        with graphics.scale_by(self.supersampling):
+            with graphics.scale_by(self.camera_scale), graphics.translate(offset):
+                self.render_inner(graphics)
+
+            self.render_ui(graphics, width=outer_surface.get_width(), height=outer_surface.get_height())
 
         surface = pygame.transform.smoothscale_by(surface, 1 / self.supersampling)
         outer_surface.blit(surface, (0, 0))
@@ -63,6 +63,23 @@ class GameState:
     def render_inner(self, graphics: GraphicsContext):
         self.map.render(graphics)
         self.building_mode.render(graphics)
+        self.quests.render(graphics)
+
+    def render_ui(self, graphics: GraphicsContext, width: float, height: float):
+        button_size = 100.0
+        uis = [
+            Assets.UI_DEFAULT,
+            Assets.UI_TRACK,
+            Assets.UI_SIGNAL,
+            Assets.UI_DEMOLISH
+        ]
+        # TODO make them clickable
+        with graphics.translate([(width - (len(uis) - 1) * button_size) / 2, height - 100]):
+            for i, ui in enumerate(uis):
+                with graphics.translate([i * button_size, 0]), graphics.scale_by(0.15):
+                    graphics.blit(ui, dest=ui.get_rect(center=(0, 0)))
+
+
 
     def update(self, delta_time: float):
         self.map.update(delta_time)
@@ -160,7 +177,5 @@ class GameState:
 
     def reset_map(self):
         self.map = Map()
-        self.map.place_rail(Rail(GridEdge(GridPoint(self.map, -2, 2), GridPoint(self.map, -1, 2))))
-        self.map.place_rail(Rail(GridEdge(GridPoint(self.map, -1, 2), GridPoint(self.map, 0, 2)), signal_type=SignalType.FROM))
-        self.map.place_rail(Rail(GridEdge(GridPoint(self.map, Map.GRID_WIDTH - 1, 6), GridPoint(self.map, Map.GRID_WIDTH, 6)), signal_type=SignalType.TO))
-        self.map.place_rail(Rail(GridEdge(GridPoint(self.map, Map.GRID_WIDTH, 6), GridPoint(self.map, Map.GRID_WIDTH + 1, 6))))
+        # self.map.place_rail(Rail(GridEdge(GridPoint(self.map, -2, 2), GridPoint(self.map, -1, 2))))
+        # self.map.place_rail(Rail(GridEdge(GridPoint(self.map, -1, 2), GridPoint(self.map, 0, 2)), signal_type=SignalType.FROM))

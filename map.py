@@ -314,6 +314,9 @@ class Map:
     def grid_to_pos(self, point: GridPoint) -> np.ndarray:
         return point.x * self.RIGHT + point.y * self.DOWN
 
+    def grid_to_pos_float(self, x, y) -> np.ndarray:
+        return x * self.RIGHT + y * self.DOWN
+
     def pos_to_grid(self, pos: np.ndarray) -> np.ndarray:
         # solve the linear system pos = x * RIGHT + y * DOWN for x and y
         A = np.column_stack((self.RIGHT, self.DOWN))

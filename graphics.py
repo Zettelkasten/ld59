@@ -1,7 +1,14 @@
+import functools
+
 import numpy as np
 import pygame
 from numpy._typing import ArrayLike
 from pygame import Surface, Rect
+
+
+@functools.cache
+def get_cached_font(font_name: str, font_size: int) -> pygame.font.Font:
+    return pygame.font.Font(font_name, font_size)
 
 
 class GraphicsContext:
@@ -17,8 +24,6 @@ class GraphicsContext:
         self.surface = surface
         self.offset = np.asarray([0.0, 0.0])
         self.scale = 1.0
-
-        self.font = pygame.font.Font("font.ttf", 22)
 
     def transform(self, offset: ArrayLike, scale: float):
         before_offset = self.offset.copy()
@@ -40,6 +45,7 @@ class GraphicsContext:
         return TransformContext(self, offset=offset, scale=scale)
 
     def translate(self, offset: ArrayLike):
+        offset = np.asarray(offset)
         return self.transform(offset=offset * self.scale, scale=1.0)
 
     def scale_by(self, scale: float):
@@ -55,6 +61,7 @@ class GraphicsContext:
         if isinstance(dest, Rect):
             dest = np.asarray(dest.topleft)
         if dest is not None:
+            dest = np.asarray(dest)
             self.surface.blit(source, self.scale * dest + self.offset)
         else:
             self.surface.blit(source, self.offset)
@@ -92,3 +99,16 @@ class GraphicsContext:
         pygame.draw.polygon(
             self.surface, color=color, points=np.asarray(points) * self.scale + self.offset[None, :]
         )
+
+    def draw_text(self, text: str, pos: ArrayLike, font_name: str, font_size: int, color: str):
+        font_family = get_cached_font(font_name, int(font_size * self.scale))
+        font = font_family.render(text, True, color)
+        height_diff = 3
+        GraphicsContext(font).draw_aalines(color, True, [
+            [0, 3],
+            [font.get_width() - 1, 3],
+            [font.get_width() - 1, font.get_height() - 1 - height_diff],
+            [0, font.get_height() - 1 - height_diff],
+        ])
+        self.surface.blit(font, self.scale * pos + self.offset - np.asarray([font.get_width() / 2, font.get_height() / 2]))
+
