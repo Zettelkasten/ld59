@@ -1,0 +1,300 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+import numpy as np
+
+from colors import Colors
+from entity import Entity
+
+from graphics import GraphicsContext
+from math2d import rotate_90deg
+
+ALLOWED_EDGE_DIFFS = {
+    (-1, 0), (-1, -1), (-1, 1),
+    (1, 0), (1, -1), (1, 1),
+}  # note there is no (0, 1) or (0, -1) because we don't allow vertical rails
+
+
+@dataclass(frozen=True)
+class GridPoint:
+    map: "Map"
+    x: int
+    y: int
+
+    def get_out_edges(self, dx_only: int | None = None):
+        return [
+            GridEdge(self, GridPoint(self.map, self.x + dx, self.y + dy))
+            for (dx, dy) in ALLOWED_EDGE_DIFFS
+            if (dx_only is None or dx == dx_only)
+        ]
+
+
+@dataclass(frozen=True)
+class GridEdge:
+    """ UNDIRECTED grid edge """
+    from_point: GridPoint
+    to_point: GridPoint
+
+    def __post_init__(self):
+        diff_x = self.from_point.x - self.to_point.x
+        diff_y = self.from_point.y - self.to_point.y
+        assert (diff_x, diff_y) in ALLOWED_EDGE_DIFFS
+        assert self.from_point.map == self.to_point.map
+
+    @property
+    def dx(self):
+        return self.to_point.x - self.from_point.x
+
+    @property
+    def dy(self):
+        return self.to_point.y - self.from_point.y
+
+    def flipped(self):
+        return GridEdge(self.to_point, self.from_point)
+
+    @property
+    def map(self):
+        return self.from_point.map
+
+    def __hash__(self):
+        return hash(frozenset((self.from_point, self.to_point)))
+
+    def __eq__(self, other):
+        if not isinstance(other, GridEdge):
+            return NotImplemented
+        return frozenset((self.from_point, self.to_point)) == frozenset((other.from_point, other.to_point))
+
+
+class SignalType(Enum):
+    NONE = "none"
+    FROM = "from"
+    TO = "to"
+
+
+class SignalState(Enum):
+    RED = "red"
+    GREEN = "green"
+
+
+@dataclass
+class Rail(Entity):
+    edge: GridEdge
+    signal_type: SignalType = SignalType.NONE
+    signal_state: SignalState = SignalState.RED
+
+    @property
+    def length(self):
+        from_pos = self.edge.map.grid_to_pos(self.edge.from_point)
+        to_pos = self.edge.map.grid_to_pos(self.edge.to_point)
+        return np.linalg.norm(to_pos - from_pos)
+
+    def render(self, graphics: GraphicsContext, color: str = Colors.TRACKS):
+        from_pos = self.edge.map.grid_to_pos(self.edge.from_point)
+        to_pos = self.edge.map.grid_to_pos(self.edge.to_point)
+        graphics.draw_circle(color, from_pos, radius=5)
+        graphics.draw_circle(color, to_pos, radius=5)
+        graphics.draw_line(color, from_pos, to_pos, width=3)
+        if self.signal_type != SignalType.NONE:
+            self.render_signal(graphics)
+
+    def signal_pos_and_arm(self):
+        edge = self.edge
+        if self.signal_type == SignalType.FROM:
+            edge = GridEdge(edge.to_point, edge.from_point)
+
+        from_pos = edge.map.grid_to_pos(edge.from_point)
+        to_pos = edge.map.grid_to_pos(edge.to_point)
+
+        middle_point = (from_pos + to_pos) / 2
+        tangent = (to_pos - from_pos)
+        tangent = tangent / np.linalg.norm(tangent)
+        normal = -rotate_90deg(tangent)
+
+        # depending on whether this is a horizontal edge or not we place the signals in different positions
+        dx, dy = edge.to_point.x - edge.from_point.x, edge.to_point.y - edge.from_point.y
+        if dy == 0:
+            # horizontal. normally render signal centered at mid-point of train,
+            # but if there is a diagonal branching off at FROM point, then we shift it by the arm-length to not
+            # collide with the branching track.
+            shift_by_arm = False
+            branch_edge = GridEdge(edge.to_point, GridPoint(edge.map, edge.to_point.x - dx, edge.to_point.y - dx))
+            if branch_edge in edge.map.placed_rails:
+                shift_by_arm = True
+        elif (dx, dy) in {(-1, -1), (1, 1)}:
+            # diagonal, going down and right.
+            shift_by_arm = False
+        elif (dx, dy) in {(1, -1), (-1, 1)}:
+            # diagonal, going up and right.
+            shift_by_arm = True
+        else:
+            assert False, edge
+
+        signal_position = middle_point + normal * 10
+        arm = tangent * 20
+        if shift_by_arm:
+            signal_position -= arm
+        return signal_position, arm
+
+    def render_signal(self, graphics: GraphicsContext):
+        signal_pos, arm = self.signal_pos_and_arm()
+        signal_color = {
+            SignalState.RED: Colors.SIGNAL_RED,
+            SignalState.GREEN: Colors.SIGNAL_GREEN,
+        }[self.signal_state]
+
+        with graphics.translate(signal_pos):
+            graphics.draw_line(signal_color, [0.0, 0.0], arm, width=2)
+            graphics.draw_circle(signal_color, [0.0, 0.0], radius=5)
+
+    def next_rail(self, dx: int) -> Rail | None:
+        end_point = self.edge.to_point if self.edge.to_point.x - self.edge.from_point.x == dx else self.edge.from_point
+        next_edges = end_point.get_out_edges(dx_only=dx)
+        next_rails = [rail for edge in next_edges if (rail := self.edge.map.placed_rails.get(edge)) is not None]
+        if len(next_rails) == 0:
+            return None
+        elif len(next_rails) == 1:
+            return next_rails[0]
+        else:
+            next_rails_by_dy = {
+                rail.edge.to_point.y - rail.edge.from_point.y: rail
+                for rail in next_rails
+            }
+            assert len(next_rails_by_dy) == len(next_rails)
+            switch = self.edge.map.switches[(end_point, dx)]
+            return next_rails_by_dy[switch.dy]
+
+
+@dataclass
+class Switch(Entity):
+    point: GridPoint
+    dx: int
+    dy: int
+
+    def render(self, graphics: GraphicsContext):
+        pos = self.point.map.grid_to_pos(self.point)
+        neighbor = GridPoint(self.point.map, self.point.x + self.dx, self.point.y + self.dy)
+        other_pos = self.point.map.grid_to_pos(neighbor)
+        graphics.draw_line(Colors.SWITCH, pos, (pos + other_pos) / 2, width=2)
+
+    def possible_dy_positions(self) -> list[int]:
+        return [
+            dy
+            for dy in [-1, 0, 1]
+            if GridEdge(self.point, GridPoint(self.point.map, self.point.x + self.dx, self.point.y + dy)) in self.point.map.placed_rails
+        ]
+
+
+@dataclass
+class Train(Entity):
+    dx: int
+
+    current_rail: Rail
+    current_delta: float = 0.0
+    speed: float = 10.0
+
+    def update(self, delta_time: float):
+        self.current_delta += self.speed * delta_time
+        while self.current_delta > self.current_rail.length:
+            self.current_delta -= self.current_rail.length
+            next_rail = self.current_rail.next_rail(dx=self.dx)
+            if next_rail is not None:
+                self.current_rail = next_rail
+            else:
+                # cannot go further
+                self.current_delta = self.current_rail.length
+                break
+
+    def render(self, graphics: GraphicsContext):
+        edge = self.current_rail.edge
+        if edge.dx != self.dx:
+            edge = edge.flipped()
+        assert edge.dx == self.dx
+        edge_start_pos = edge.map.grid_to_pos(edge.from_point)
+        edge_end_pos = edge.map.grid_to_pos(edge.to_point)
+        pos = edge_start_pos + (edge_end_pos - edge_start_pos) * (self.current_delta / self.current_rail.length)
+        graphics.draw_circle(Colors.TRAIN, pos, 10)
+
+
+class Map:
+    """
+    (0, 0) is somewhere.
+    (1, 0) is one cell to the right
+    (0, 1) is one cell down, where down is given by the down vector (pointing slightly down)
+    """
+    DIST = 100.0
+    RIGHT = np.array([0.5 * DIST, 0.0])
+    DOWN = np.array([0.0, 0.3 * DIST])
+    GRID_WIDTH = 18
+    GRID_HEIGHT = 12
+
+    def __init__(self):
+        self.placed_rails: dict[GridEdge, Rail] = {}
+        self.switches: dict[tuple[GridPoint, int], Switch] = {}  # (point, dx) -> switch
+        self.trains: list[Train] = []
+
+    def grid_to_pos(self, point: GridPoint) -> np.ndarray:
+        return point.x * self.RIGHT + point.y * self.DOWN
+
+    def pos_to_grid(self, pos: np.ndarray) -> np.ndarray:
+        # solve the linear system pos = x * RIGHT + y * DOWN for x and y
+        A = np.column_stack((self.RIGHT, self.DOWN))
+        xy = np.linalg.solve(A, pos)
+        return xy
+
+    def update(self, delta_time: float):
+        for train in self.trains:
+            train.update(delta_time)
+
+    def render(self, graphics: GraphicsContext):
+        graphics.draw_polygon(
+            Colors.BACKGROUND_PLAYABLE, [
+                self.grid_to_pos(GridPoint(self, 0, 0)),
+                self.grid_to_pos(GridPoint(self, self.GRID_WIDTH - 1, 0)),
+                self.grid_to_pos(GridPoint(self, self.GRID_WIDTH - 1, self.GRID_HEIGHT - 1)),
+                self.grid_to_pos(GridPoint(self, 0, self.GRID_HEIGHT - 1)),
+            ])
+        for rail in self.placed_rails.values():
+            rail.render(graphics)
+        for switch in self.switches.values():
+            switch.render(graphics)
+        for train in self.trains:
+            train.render(graphics)
+
+    def get_edges_between(self, from_point: GridPoint, to_point: GridPoint) -> list[GridEdge]:
+        # greedy implementation
+        if from_point == to_point:
+            return []
+        potential_edges = from_point.get_out_edges()
+        distances = {
+            edge: np.linalg.norm(self.grid_to_pos(edge.to_point) - self.grid_to_pos(to_point))
+            for edge in potential_edges
+        }
+        best_edge = min(potential_edges, key=distances.get)
+        next_edges = self.get_edges_between(best_edge.to_point, to_point)
+        if len(next_edges) > 0:
+            next_edge = next_edges[0]
+            if next_edge.to_point.x == best_edge.from_point.x:
+                # edge does zig-zag, that is not allowed
+                return []
+        return [best_edge] + next_edges
+
+    def is_point_on_map(self, point: GridPoint):
+        if 0 <= point.x < self.GRID_WIDTH and 0 <= point.y < self.GRID_HEIGHT:
+            return True
+        else:
+            return False
+
+    def place_rail(self, rail: Rail):
+        self.placed_rails[rail.edge] = rail
+        # check junctions
+        dx = rail.edge.to_point.x - rail.edge.from_point.x
+        dy = rail.edge.to_point.y - rail.edge.from_point.y
+        assert dx == -1 or dx == 1
+        point_left_edges = [edge for edge in rail.edge.from_point.get_out_edges(dx_only=dx) if edge in self.placed_rails]
+        point_right_edges = [edge for edge in rail.edge.to_point.get_out_edges(dx_only=-dx) if edge in self.placed_rails]
+        if len(point_left_edges) >= 2 and (rail.edge.from_point, dx) not in self.switches:
+            self.switches[(rail.edge.from_point, dx)] = Switch(rail.edge.from_point, dx, dy)
+        if len(point_right_edges) >= 2 and (rail.edge.to_point, -dx) not in self.switches:
+            self.switches[(rail.edge.to_point, -dx)] = Switch(rail.edge.to_point, -dx, -dy)
