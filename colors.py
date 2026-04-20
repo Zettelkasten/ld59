@@ -24,9 +24,14 @@ class Assets:
 
     TRAIN = pygame.image.load("assets/train.svg")
 
-    DOM = pygame.image.load("assets/dom.svg")
+    DESTINATIONS = {
+        name: pygame.image.load(f"assets/destinations/{name}.svg")
+        for name in ["anitkabir", "castle", "city", "dom", "factory", "forest", "hiking", "school", "ship"]
+    }
 
     UI_DEFAULT = pygame.image.load("assets/ui_default.svg")
     UI_TRACK = pygame.image.load("assets/ui_track.svg")
     UI_SIGNAL = pygame.image.load("assets/ui_signal.svg")
     UI_DEMOLISH = pygame.image.load("assets/ui_demolish.svg")
+    UI_SLOW = pygame.image.load("assets/ui_slow.svg")
+    UI_FAST = pygame.image.load("assets/ui_fast.svg")

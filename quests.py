@@ -65,7 +65,7 @@ class OffMapDestination(Destination):
                         rail.signal_state = SignalState.RED
 
     @staticmethod
-    def make_simple(map: Map, *, dx: int, dy: int = 0, y: int, name: str):
+    def make_simple(map: Map, *, dx: int, dy: int = 0, y: int, name: str, marker_icon: pygame.Surface):
         assert dx == 1 or dx == -1
         x = 0 if dx == 1 else Map.GRID_WIDTH - 1
         return OffMapDestination(
@@ -80,8 +80,8 @@ class OffMapDestination(Destination):
                 Rail(GridEdge(GridPoint(map, -1 * dx + x, y + dy * 1), GridPoint(map, 0 * dx + x, y + dy * 0)), signal_type=SignalType.TO),
             ],
             name=name,
-            marker_pos=map.grid_to_pos_float(-1 * dx + x, y - 1.5 + min(dx, 0) + dy),
-            marker_icon=Assets.DOM,
+            marker_pos=map.grid_to_pos_float(-0.75 * dx + x, y - 1.5 + min(dx, 0) + dy),
+            marker_icon=marker_icon,
         )
 
     def render(self, graphics: GraphicsContext):
@@ -94,13 +94,22 @@ class OffMapDestination(Destination):
 class Quests:
     def __init__(self, map: Map):
         self.map = map
+        all_marker_icons = list(Assets.DESTINATIONS.values())
+        random.shuffle(all_marker_icons)
+        i = 0
+        def next_marker_icon():
+            nonlocal i
+            icon = all_marker_icons[i % len(all_marker_icons)]
+            i += 1
+            return icon
+
         self.off_map_destinations = {
-            "D": OffMapDestination.make_simple(map, dx=1, dy=0, y=2, name="D"),
-            "E": OffMapDestination.make_simple(map, dx=1, dy=0, y=7, name="E"),
-            "F": OffMapDestination.make_simple(map, dx=1, dy=1, y=10, name="F"),
-            "A": OffMapDestination.make_simple(map, dx=-1, dy=-1, y=2, name="A"),
-            "B": OffMapDestination.make_simple(map, dx=-1, dy=0, y=5, name="B"),
-            "C": OffMapDestination.make_simple(map, dx=-1, dy=0, y=10, name="C"),
+            "D": OffMapDestination.make_simple(map, dx=1, dy=0, y=2, name="D", marker_icon=next_marker_icon()),
+            "E": OffMapDestination.make_simple(map, dx=1, dy=0, y=7, name="E", marker_icon=next_marker_icon()),
+            "F": OffMapDestination.make_simple(map, dx=1, dy=1, y=10, name="F", marker_icon=next_marker_icon()),
+            "A": OffMapDestination.make_simple(map, dx=-1, dy=-1, y=2, name="A", marker_icon=next_marker_icon()),
+            "B": OffMapDestination.make_simple(map, dx=-1, dy=0, y=5, name="B", marker_icon=next_marker_icon()),
+            "C": OffMapDestination.make_simple(map, dx=-1, dy=0, y=10, name="C", marker_icon=next_marker_icon()),
         }
         self.stage_min_scores = {
             1: 0,

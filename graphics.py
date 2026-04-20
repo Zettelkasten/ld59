@@ -1,4 +1,5 @@
 import functools
+from typing import Literal
 
 import numpy as np
 import pygame
@@ -100,7 +101,7 @@ class GraphicsContext:
             self.surface, color=color, points=np.asarray(points) * self.scale + self.offset[None, :]
         )
 
-    def draw_text(self, text: str, pos: ArrayLike, font_name: str, font_size: int, color: str):
+    def draw_text(self, text: str, pos: ArrayLike, font_name: str, font_size: int, color: str, align: Literal["center", "left", "right"] = "center"):
         font_family = get_cached_font(font_name, int(font_size * self.scale))
         font = font_family.render(text, True, color)
         height_diff = 3
@@ -111,5 +112,13 @@ class GraphicsContext:
             [0, font.get_height() - 1 - height_diff],
         ])
         pos = np.asarray(pos)
-        self.surface.blit(font, self.scale * pos + self.offset - np.asarray([font.get_width() / 2, font.get_height() / 2]))
+        if align == "center":
+            offset = np.asarray([font.get_width() / 2, font.get_height() / 2])
+        elif align == "right":
+            offset = np.asarray([font.get_width(), font.get_height() / 2])
+        elif align == "left":
+            offset = np.asarray([0, font.get_height() / 2])
+        else:
+            assert False, align
+        self.surface.blit(font, self.scale * pos + self.offset - offset)
 

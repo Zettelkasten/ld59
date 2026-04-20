@@ -53,8 +53,6 @@ class GameState:
         graphics = GraphicsContext(surface)
         g = GraphicsContext(outer_surface)
 
-        g.draw_text("frittytracks", pos=np.asarray([outer_surface.get_width() / 2, 50]), font_name="assets/font.ttf", font_size=22, color="white")
-
         with graphics.scale_by(self.supersampling):
             with graphics.scale_by(self.camera_scale), graphics.translate(offset):
                 self.render_inner(graphics)
@@ -70,19 +68,23 @@ class GameState:
         self.quests.render(graphics)
 
     def render_ui(self, graphics: GraphicsContext, width: float, height: float):
+        graphics.draw_text("frittytracks", pos=np.asarray([width / 2, 50]), font_name="assets/font.ttf", font_size=22, color="white")
+        graphics.draw_text(
+            f"Score: {self.score_correct_trains}", pos=np.asarray([width - 75, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="right")
+
         button_size = 100.0
         uis = [
             Assets.UI_DEFAULT,
             Assets.UI_TRACK,
             Assets.UI_SIGNAL,
-            Assets.UI_DEMOLISH
+            Assets.UI_DEMOLISH,
+            Assets.UI_FAST,
         ]
         # TODO make them clickable
         with graphics.translate([(width - (len(uis) - 1) * button_size) / 2, height - 100]):
             for i, ui in enumerate(uis):
                 with graphics.translate([i * button_size, 0]), graphics.scale_by(0.15):
                     graphics.blit(ui, dest=ui.get_rect(center=(0, 0)))
-            graphics.draw_text(f"Score: {self.score_correct_trains}", pos=[0, -50], font_name="assets/font.ttf", font_size=22, color="white")
 
     def update(self, delta_time: float):
         self.map.update(delta_time)
