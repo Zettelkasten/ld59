@@ -50,6 +50,9 @@ class GameState:
 
         offset = self.camera_offset
 
+        # adjust camera scale to fit picture
+        self.camera_scale = outer_surface.get_width() * self.supersampling / ((self.map.GRID_WIDTH + 2) * self.map.DIST)
+
         graphics = GraphicsContext(surface)
         g = GraphicsContext(outer_surface)
 
