@@ -1,3 +1,5 @@
+import pygame
+
 
 class Colors:
     SIGNAL_RED = "#FF2222"
@@ -11,3 +13,11 @@ class Colors:
     BUILDING_SELECTED_POINT = "green"
     BUILDING_TRACK = "green"
     BUILDING_SIGNAL = "green"
+
+
+class Assets:
+    SIGNAL = pygame.image.load("assets/signal.svg")
+    SIGNAL_RED = pygame.image.load("assets/signal_red.svg")
+    SIGNAL_GREEN = pygame.image.load("assets/signal_green.svg")
+
+    TRAIN = pygame.image.load("assets/train.svg")

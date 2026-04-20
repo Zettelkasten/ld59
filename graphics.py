@@ -53,8 +53,8 @@ class GraphicsContext:
                 source = pygame.transform.scale_by(source, self.scale)
 
         if isinstance(dest, Rect):
-            self.surface.blit(source, dest.move(*self.offset))
-        elif dest is not None:
+            dest = np.asarray(dest.topleft)
+        if dest is not None:
             self.surface.blit(source, self.scale * dest + self.offset)
         else:
             self.surface.blit(source, self.offset)

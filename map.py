@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
+import pygame
+from pygame import Vector2
 
-from colors import Colors
+from colors import Colors, Assets
 from entity import Entity
 
 from graphics import GraphicsContext
@@ -166,8 +169,16 @@ class Rail(Entity):
         }[self.signal_state]
 
         with graphics.translate(signal_pos):
-            graphics.draw_line(signal_color, [0.0, 0.0], arm, width=2)
-            graphics.draw_circle(signal_color, [0.0, 0.0], radius=5)
+            # graphics.draw_line(signal_color, [0.0, 0.0], arm, width=2)
+            # graphics.draw_circle(signal_color, [0.0, 0.0], radius=5)
+            with graphics.scale_by(0.08):
+                angle = math.atan2(-arm[1], -arm[0]) * 180 / math.pi + 90
+                img = {
+                    SignalState.RED: Assets.SIGNAL_RED,
+                    SignalState.GREEN: Assets.SIGNAL_GREEN,
+                }[self.signal_state]
+                rot_img = pygame.transform.rotate(img, -angle)
+                graphics.blit(rot_img, rot_img.get_rect(center=(0, 0)))
 
     def next_rail(self, dx: int) -> Rail | None:
         end_point = self.edge.to_point if self.edge.to_point.x - self.edge.from_point.x == dx else self.edge.from_point
@@ -235,7 +246,15 @@ class Train(Entity):
         edge_start_pos = edge.map.grid_to_pos(edge.from_point)
         edge_end_pos = edge.map.grid_to_pos(edge.to_point)
         pos = edge_start_pos + (edge_end_pos - edge_start_pos) * (self.current_delta / self.current_rail.length)
-        graphics.draw_circle(Colors.TRAIN, pos, 10)
+        # graphics.draw_circle(Colors.TRAIN, pos, 10)
+
+        with graphics.translate(pos), graphics.scale_by(0.05):
+            tangent = edge_end_pos - edge_start_pos
+            tangent = tangent / np.linalg.norm(tangent)
+            angle = math.atan2(-tangent[1], -tangent[0]) * 180 / math.pi + 180
+            img = Assets.TRAIN
+            rot_img = pygame.transform.rotate(img, -angle)
+            graphics.blit(rot_img, rot_img.get_rect(center=(0, 0)))
 
 
 class Map:
