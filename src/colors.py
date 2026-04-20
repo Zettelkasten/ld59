@@ -14,6 +14,7 @@ class Colors:
     BUILDING_SELECTED_POINT = "green"
     BUILDING_TRACK = "green"
     BUILDING_SIGNAL = "green"
+    DESTROYING_TRACK = "#C32B38"
 
     UI_ACTIVE = "red"
 

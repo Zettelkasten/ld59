@@ -1,3 +1,11 @@
+# /// script
+# dependencies = [
+#  "numpy",
+# ]
+# ///
+
+import asyncio
+
 import pygame
 
 from game import GameState
@@ -5,7 +13,7 @@ from game import GameState
 TARGET_FPS = 60
 
 
-def main():
+async def main():
     pygame.init()
     pygame.font.init()
 
@@ -46,5 +54,6 @@ def main():
         pygame.display.flip()
         delta_time = clock.tick(TARGET_FPS) / 1000
 
-if __name__ == "__main__":
-    main()
+        await asyncio.sleep(0)
+
+asyncio.run(main())

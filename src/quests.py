@@ -78,7 +78,7 @@ class OffMapDestination(Destination):
             ],
             out_rails=[
                 Rail(GridEdge(GridPoint(map, -2 * dx + x, y + dy * 2), GridPoint(map, -1 * dx + x, y + dy * 1)), is_destination=True),
-                Rail(GridEdge(GridPoint(map, -1 * dx + x, y + dy * 1), GridPoint(map, 0 * dx + x, y + dy * 0)), signal_type=SignalType.TO),
+                Rail(GridEdge(GridPoint(map, -1 * dx + x, y + dy * 1), GridPoint(map, 0 * dx + x, y + dy * 0))),  # , signal_type=SignalType.TO
             ],
             name=name,
             marker_pos=map.grid_to_pos_float(-1 * dx + x, y - 1.5 + min(dx, 0) + dy),
@@ -117,10 +117,18 @@ class Quests:
             1: 0,
             2: 3,
             3: 10,
+            4: 25,
+            5: 40,
+            6: 60,
+            7: 80,
+            9: 100,
+            10: 120,
         }
         self.active_sources: list[OffMapDestination] = []
         self.active_destinations: list[Destination] = []
         self.current_stage = 0
+        self.spawn_cooldown = 13.0
+        self.time_since_last_spawn = 10000.0
 
         self.last_active_source: None | OffMapDestination = None
 
@@ -135,9 +143,25 @@ class Quests:
             new_destinations.append(self.off_map_destinations["B"])
         elif self.current_stage == 2:
             new_sources.append(self.off_map_destinations["B"])
-            new_destinations.append(self.off_map_destinations["E"])
+            new_destinations.append(self.off_map_destinations["E"])  # have B, E fully
         elif self.current_stage == 3:
-            new_destinations.append(self.off_map_destinations["D"])
+            new_destinations.append(self.off_map_destinations["F"])
+        elif self.current_stage == 4:
+            new_sources.append(self.off_map_destinations["F"])
+            new_destinations.append(self.off_map_destinations["C"])  # have B, E, F fully, C out
+        elif self.current_stage == 5:
+            new_sources.append(self.off_map_destinations["A"])
+            new_destinations.append(self.off_map_destinations["A"])  # have A, B, E, F fully, C out
+        elif self.current_stage == 6:
+            new_destinations.append(self.off_map_destinations["D"])  # have A, B, E, F fully, C, D out
+        elif self.current_stage == 7:
+            new_sources.append(self.off_map_destinations["D"])  # have A, B, D, E, F fully, C out
+        elif self.current_stage == 8:
+            new_destinations.append(self.off_map_destinations["G"])  # have A, B, D, E, F fully, C, G out
+        elif self.current_stage == 9:
+            new_sources.append(self.off_map_destinations["C"])  # have A, B, C, D, E, F fully, G out
+        elif self.current_stage == 10:
+            new_destinations.append(self.off_map_destinations["G"])  # have A, B, C, D, E, F, G fully
         else:
             return False
 
@@ -181,12 +205,15 @@ class Quests:
 
         # spawn trains
         self.maybe_spawn_trains()
+        self.time_since_last_spawn += delta_time * self.map.simulation_speed
 
         # maybe advance stage
         if self.map.game_state.score_correct_trains >= self.stage_min_scores.get(self.current_stage + 1, math.inf):
             self.advance_stage()
 
     def maybe_spawn_trains(self):
+        if self.time_since_last_spawn < self.spawn_cooldown:
+            return
         for train in self.map.trains:
             if train.remaining_waiting_time > 0:
                 return
@@ -196,11 +223,20 @@ class Quests:
             self.last_active_source = self.active_sources[-1]
         # get next active source
         source = self.active_sources[(self.active_sources.index(self.last_active_source) + 1) % len(self.active_sources)]
+        if any(train.current_rail in source.in_rails for train in self.map.trains):
+            return  # don't spawn if there is already a train on the source
+
         print("NEXT ACTIVE SOURCE IS", source.name)
         new_destination = self.find_destination(source.dx)
         source.spawn_train(new_destination)
         self.last_active_source = source
+        self.time_since_last_spawn = 0.0
 
     def render(self, graphics: GraphicsContext):
         for destination in set(self.active_destinations) | set(self.active_sources):
             destination.render(graphics)
+
+    def score_needed_for_next_level(self):
+        if self.current_stage + 1 not in self.stage_min_scores:
+            return None
+        return self.stage_min_scores.get(self.current_stage + 1, math.inf) - self.map.game_state.score_correct_trains

@@ -226,7 +226,7 @@ class Switch(Entity):
         pos = self.point.map.grid_to_pos(self.point)
         neighbor = GridPoint(self.point.map, self.point.x + self.dx, self.point.y + self.dy)
         other_pos = self.point.map.grid_to_pos(neighbor)
-        graphics.draw_line(Colors.SWITCH, pos, (pos + other_pos) / 2, width=2)
+        graphics.draw_line(Colors.SWITCH, pos, (pos + other_pos) / 2, width=6)
 
     def possible_dy_positions(self) -> list[int]:
         return [
@@ -252,7 +252,10 @@ class Train(Entity):
     remaining_waiting_time = max_waiting_time
     crashed: bool = False
 
-    def update(self, delta_time: float):
+    max_popup_fadeout_time: float = 2.0
+    popup_fadeout_time: float = max_popup_fadeout_time
+
+    def update(self, delta_time: float, real_delta_time: float):
         next_rail = self.current_rail.next_rail(dx=self.dx)
         if next_rail is not None:
             if (self.current_rail.length - self.current_delta) <= TRAIN_STOP_DISTANCE:
@@ -271,6 +274,8 @@ class Train(Entity):
                 # will go now
                 self.remaining_waiting_time = 0.0
                 next_rail.signal_state = SignalState.GREEN
+        if self.remaining_waiting_time == 0:
+            self.popup_fadeout_time -= real_delta_time
 
         target_speed = 0.0 if red_signal else self.max_speed
         self.current_speed = clamp(self.current_speed + np.sign(target_speed - self.current_speed) * self.acceleration * delta_time, 0.0, self.max_speed)
@@ -323,8 +328,14 @@ class Train(Entity):
             rot_img = pygame.transform.rotate(img, -angle)
             graphics.blit(rot_img, rot_img.get_rect(center=(0, 0)))
 
+            if graphics.is_in_area(self.current_rail.edge.map.game_state.mouse_pos, rot_img.get_rect(center=(0, 0))):
+                self.popup_fadeout_time = self.max_popup_fadeout_time
+
+
     def maybe_render_popup(self, graphics: GraphicsContext):
         if self.current_rail.edge.map.game_state.game_over:
+            return
+        if self.popup_fadeout_time <= 0:
             return
         self.render_popup(graphics)
 
@@ -405,7 +416,7 @@ class Map:
 
     def update(self, delta_time: float):
         for train in self.trains:
-            train.update(delta_time * self.simulation_speed)
+            train.update(delta_time * self.simulation_speed, real_delta_time=delta_time)
 
         # check for explosion
         rails_to_trains = {}
@@ -471,6 +482,12 @@ class Map:
             rail.next_rail(dx=-1)
             rail.next_rail(dx=1)
 
+    def remove_rail(self, edge: GridEdge):
+        del self.placed_rails[edge]
+        # check switches
+        for (grid_point, dx), switch in list(self.switches.items()):
+            if len(switch.possible_dy_positions()) <= 1:
+                del self.switches[(grid_point, dx)]
 
     def update_switches(self, rail: Rail):
         dx = rail.edge.to_point.x - rail.edge.from_point.x

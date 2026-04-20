@@ -7,14 +7,11 @@ from numpy.ma.core import outer
 from pygame import Surface
 from pygame.event import Event
 
-from building import BuildRails, BuildSignals, SwitchSignalsAndSwitches
+from building import BuildRails, BuildSignals, SwitchSignalsAndSwitches, DemolishRails
 from colors import Colors, Assets
 from graphics import GraphicsContext
 from map import Map, GridPoint, Rail, SignalType, Switch, Train
 from quests import Quests
-
-import better_exchook
-better_exchook.install()
 
 
 class GameState:
@@ -34,8 +31,8 @@ class GameState:
         self.global_time = 0
 
         self.quests = Quests(self.map)
-        # self.quests.advance_stage()
-        self.quests.add_all()
+        self.quests.advance_stage()
+        # self.quests.add_all()
 
         # building mode
         self.building_mode = BuildRails(self)
@@ -83,9 +80,9 @@ class GameState:
             (Assets.UI_DEFAULT, Assets.UI_DEFAULT_ACTIVE, isinstance(self.building_mode, SwitchSignalsAndSwitches), 0.0, "set signals and switch track junctions"),
             (Assets.UI_TRACK,Assets.UI_TRACK_ACTIVE,  isinstance(self.building_mode, BuildRails), 100.0, "lay some track"),
             (Assets.UI_SIGNAL, Assets.UI_SIGNAL_ACTIVE, isinstance(self.building_mode, BuildSignals), 100.0, "build and remove signals"),
-            (Assets.UI_DEMOLISH, Assets.UI_DEMOLISH_ACTIVE, False, 120.0, "demolish stuff"),
-            (Assets.UI_SLOW, Assets.UI_FAST, is_fast, 120.0, "back to slow" if is_fast else "let there be speed"),
-            (Assets.UI_PLAY, Assets.UI_PAUSE, is_paused, 100.0, "continue" if is_paused else "take a break"),
+            (Assets.UI_DEMOLISH, Assets.UI_DEMOLISH_ACTIVE, False, 120.0, "demolish some track"),
+            (Assets.UI_SLOW, Assets.UI_FAST, is_fast, 120.0, "back to slow" if is_fast else "speed up the game"),
+            (Assets.UI_PLAY, Assets.UI_PAUSE, is_paused, 100.0, "resume" if is_paused else "pause"),
         ]
         total_width = sum(button_width for _, _, _, button_width, _ in uis)
 
@@ -115,8 +112,15 @@ class GameState:
         if self.game_over:
             title_text = "game over! your trains have crashed!"
         graphics.draw_text(title_text, pos=np.asarray([width / 2, 50]), font_name="assets/font.ttf", font_size=22, color="white")
+        to_next_level = self.quests.score_needed_for_next_level()
+        if to_next_level is None:
+            to_next_level_text = "maximum level reached!"
+        else:
+            to_next_level_text = f"{to_next_level} more for next level"
         graphics.draw_text(
-            f"score: {self.score_correct_trains}", pos=np.asarray([width - 100 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="right")
+            to_next_level_text, pos=np.asarray([width - 100 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="right")
+        graphics.draw_text(
+            f"score: {self.score_correct_trains}", pos=np.asarray([100 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="left")
 
     def update(self, delta_time: float):
         self.global_time += delta_time
@@ -143,7 +147,7 @@ class GameState:
                 elif self.ui_selected == 2:
                     self.building_mode = BuildSignals(self)
                 elif self.ui_selected == 3:
-                    pass  # not implemented?
+                    self.building_mode = DemolishRails(self)
                 elif self.ui_selected == 4:
                     self.map.simulation_speed = 8.0 if self.map.simulation_speed == 1.0 else 1.0
                 elif self.ui_selected == 5:
@@ -218,7 +222,7 @@ class GameState:
         elif event.key == pygame.K_e or event.key == pygame.K_3:
             self.building_mode = BuildSignals(self)
         elif event.key == pygame.K_r or event.key == pygame.K_4:
-            pass
+            self.building_mode = DemolishRails(self)
         elif event.key == pygame.K_t or event.key == pygame.K_5 or event.key == pygame.K_SPACE:
             self.map.simulation_speed = 0.0 if self.map.simulation_speed != 0.0 else 1.0
         elif event.key == pygame.K_y or event.key == pygame.K_z or event.key == pygame.K_6:
