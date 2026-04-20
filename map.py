@@ -197,6 +197,17 @@ class Rail(Entity):
             switch = self.edge.map.switches[(end_point, dx)]
             return next_rails_by_dy[switch.dy]
 
+    def get_tangent(self, dx: int):
+        edge = self.edge
+        if edge.dx != dx:
+            edge = edge.flipped()
+        assert edge.dx == dx
+        from_pos = edge.map.grid_to_pos(edge.from_point)
+        to_pos = edge.map.grid_to_pos(edge.to_point)
+        tangent = to_pos - from_pos
+        tangent = tangent / np.linalg.norm(tangent)
+        return tangent
+
 
 @dataclass
 class Switch(Entity):
@@ -224,7 +235,7 @@ class Train(Entity):
 
     current_rail: Rail
     current_delta: float = 0.0
-    speed: float = 10.0
+    speed: float = 20.0
 
     def update(self, delta_time: float):
         self.current_delta += self.speed * delta_time
@@ -248,9 +259,18 @@ class Train(Entity):
         pos = edge_start_pos + (edge_end_pos - edge_start_pos) * (self.current_delta / self.current_rail.length)
         # graphics.draw_circle(Colors.TRAIN, pos, 10)
 
+        tangent = edge_end_pos - edge_start_pos
+        tangent = tangent / np.linalg.norm(tangent)
+
+        # interpolate with next tangent
+        turn_start_frac = 0.5
+        next_segment = self.current_rail.next_rail(dx=self.dx)
+        if next_segment is not None and self.current_delta >= self.current_rail.length * turn_start_frac:
+            next_tangent = next_segment.get_tangent(dx=self.dx)
+            dt = (self.current_delta / self.current_rail.length - turn_start_frac) / (1 - turn_start_frac)
+            tangent = (1 - dt) * tangent + dt * next_tangent
+
         with graphics.translate(pos), graphics.scale_by(0.05):
-            tangent = edge_end_pos - edge_start_pos
-            tangent = tangent / np.linalg.norm(tangent)
             angle = math.atan2(-tangent[1], -tangent[0]) * 180 / math.pi + 180
             img = Assets.TRAIN
             rot_img = pygame.transform.rotate(img, -angle)
