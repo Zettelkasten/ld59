@@ -30,6 +30,27 @@ class GridPoint:
             if (dx_only is None or dx == dx_only)
         ]
 
+    def render_rail_tick(self, graphics: GraphicsContext, color: str):
+        pos = self.map.grid_to_pos(self)
+        tick_length = 8.0
+
+        neighbor_dx_dys = {
+            (dx, dy)
+            for (dx, dy) in ALLOWED_EDGE_DIFFS
+            if GridEdge(self, GridPoint(self.map, self.x + dx, self.y + dy)) in self.map.placed_rails
+        }
+
+        if ({(-1, -1), (1, 1)} <= neighbor_dx_dys and len(neighbor_dx_dys) <= 3) or (len(neighbor_dx_dys) == 1 and neighbor_dx_dys <= {(-1, -1), (1, 1)}):
+            normal = rotate_90deg(np.asarray([self.map.RIGHT[0], self.map.DOWN[1]]))
+            normal = normal / np.linalg.norm(normal)
+        elif {(1, -1), (-1, 1)} <= neighbor_dx_dys and len(neighbor_dx_dys) <= 3 or (len(neighbor_dx_dys) == 1 and neighbor_dx_dys <= {(1, -1), (-1, 1)}):
+            normal = rotate_90deg(np.asarray([self.map.RIGHT[0], -self.map.DOWN[1]]))
+            normal = normal / np.linalg.norm(normal)
+        else:  # default case
+            normal = np.asarray([0.0, 1.0])
+
+        graphics.draw_line(color, pos - normal * tick_length, pos + normal * tick_length, width=2)
+
 
 @dataclass(frozen=True)
 class GridEdge:
@@ -93,8 +114,8 @@ class Rail(Entity):
     def render(self, graphics: GraphicsContext, color: str = Colors.TRACKS):
         from_pos = self.edge.map.grid_to_pos(self.edge.from_point)
         to_pos = self.edge.map.grid_to_pos(self.edge.to_point)
-        graphics.draw_circle(color, from_pos, radius=5)
-        graphics.draw_circle(color, to_pos, radius=5)
+        self.edge.from_point.render_rail_tick(graphics, color=color)
+        self.edge.to_point.render_rail_tick(graphics, color=color)
         graphics.draw_line(color, from_pos, to_pos, width=3)
         if self.signal_type != SignalType.NONE:
             self.render_signal(graphics)
