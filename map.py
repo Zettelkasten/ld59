@@ -187,21 +187,22 @@ class Rail(Entity):
                 graphics.blit(rot_img, rot_img.get_rect(center=(0, 0)))
 
     def next_rail(self, dx: int) -> Rail | None:
+        map = self.edge.map
         end_point = self.edge.to_point if self.edge.to_point.x - self.edge.from_point.x == dx else self.edge.from_point
         next_edges = end_point.get_out_edges(dx_only=dx)
-        next_rails = [rail for edge in next_edges if (rail := self.edge.map.placed_rails.get(edge)) is not None]
-        if len(next_rails) == 0:
+        next_edges = [edge for edge in next_edges if edge in map.placed_rails]
+        if len(next_edges) == 0:
             return None
-        elif len(next_rails) == 1:
-            return next_rails[0]
+        elif len(next_edges) == 1:
+            return map.placed_rails[next_edges[0]]
         else:
-            next_rails_by_dy = {
-                rail.edge.to_point.y - rail.edge.from_point.y: rail
-                for rail in next_rails
+            next_edges_by_dy = {
+                edge.to_point.y - edge.from_point.y: edge
+                for edge in next_edges
             }
-            assert len(next_rails_by_dy) == len(next_rails)
-            switch = self.edge.map.switches[(end_point, dx)]
-            return next_rails_by_dy[switch.dy]
+            assert len(next_edges_by_dy) == len(next_edges)
+            switch = map.switches[(end_point, dx)]
+            return map.placed_rails[next_edges_by_dy[switch.dy]]
 
     def get_tangent(self, dx: int):
         edge = self.edge
@@ -382,6 +383,15 @@ class Map:
     def place_rail(self, rail: Rail):
         self.placed_rails[rail.edge] = rail
         # check junctions
+        for rail in self.placed_rails.values():
+            self.update_switches(rail)
+        # debug
+        for rail in self.placed_rails.values():
+            rail.next_rail(dx=-1)
+            rail.next_rail(dx=1)
+
+
+    def update_switches(self, rail: Rail):
         dx = rail.edge.to_point.x - rail.edge.from_point.x
         dy = rail.edge.to_point.y - rail.edge.from_point.y
         assert dx == -1 or dx == 1

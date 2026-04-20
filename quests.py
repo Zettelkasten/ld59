@@ -1,4 +1,5 @@
 import math
+import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -104,6 +105,7 @@ class Quests:
         self.stage_min_scores = {
             1: 0,
             2: 3,
+            3: 10,
         }
         self.active_sources: list[OffMapDestination] = []
         self.active_destinations: list[Destination] = []
@@ -121,6 +123,8 @@ class Quests:
         elif self.current_stage == 2:
             new_sources.append(self.off_map_destinations["B"])
             new_destinations.append(self.off_map_destinations["E"])
+        elif self.current_stage == 3:
+            new_destinations.append(self.off_map_destinations["D"])
         else:
             return False
 
@@ -136,10 +140,13 @@ class Quests:
         return True
 
     def find_destination(self, dx: int) -> Destination:
+        valid_destinations = []
         for destination in self.active_destinations:
             if isinstance(destination, OffMapDestination) and destination.dx == -dx:
-                return destination
-        raise ValueError(f"No destination found for dx={dx}")
+                valid_destinations.append(destination)
+        if len(valid_destinations) == 0:
+            raise ValueError(f"No valid destination for dx={dx}")
+        return random.choice(valid_destinations)
 
     def add_all(self):
         for destination in self.off_map_destinations.values():

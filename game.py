@@ -13,6 +13,9 @@ from graphics import GraphicsContext
 from map import Map, GridEdge, GridPoint, Rail, SignalType, Switch, Train
 from quests import Quests
 
+import better_exchook
+better_exchook.install()
+
 
 class GameState:
     def __init__(self):
