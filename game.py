@@ -7,6 +7,7 @@ from pygame import Surface
 from pygame.event import Event
 
 from building import BuildRails, BuildSignals, SwitchSignalsAndSwitches
+from colors import Colors
 from graphics import GraphicsContext
 from map import Map, GridEdge, GridPoint, Rail, SignalType, Switch, Train
 
@@ -34,7 +35,7 @@ class GameState:
     def render(self, outer_surface: Surface):
         surface = pygame.Surface(np.asarray(outer_surface.get_size()) * self.supersampling, pygame.SRCALPHA)
 
-        outer_surface.fill("blue")
+        outer_surface.fill(Colors.BACKGROUND)
 
         offset = self.camera_offset
 

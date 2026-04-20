@@ -1,12 +1,12 @@
 
 class Colors:
-    SIGNAL_RED = "red"
-    SIGNAL_GREEN = "green"
-    TRACKS = "orange"
-    BACKGROUND = "blue"
-    BACKGROUND_PLAYABLE = "lightblue"
-    SWITCH = "purple"
-    TRAIN = "cyan"
+    SIGNAL_RED = "#FF2222"
+    SIGNAL_GREEN = "#00FF41"
+    TRACKS = "#FFD700"
+    BACKGROUND = "#171717"
+    BACKGROUND_PLAYABLE = "#0A0A0A"
+    SWITCH = "#874BFF"
+    TRAIN = "#4BEDFF"
 
     BUILDING_SELECTED_POINT = "green"
     BUILDING_TRACK = "green"
