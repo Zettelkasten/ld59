@@ -6,9 +6,12 @@ from dataclasses import dataclass
 import numpy as np
 import pygame
 
+import story
 from colors import Colors, Assets
 from graphics import GraphicsContext
 from map import Map, GridEdge, Rail, GridPoint, SignalType, Train, SignalState
+from story import StoryMessage
+from tutorial_highlights import TutorialHighlightDestination
 
 
 @dataclass
@@ -55,7 +58,8 @@ class OffMapDestination(Destination):
         has_out_train = any(train.destination == self for train in self.map.trains)
         for rail in self.out_rails:
             if rail.signal_type != SignalType.NONE:
-                rail.signal_state = SignalState.GREEN if has_out_train else SignalState.RED
+                # always green
+                rail.signal_state = SignalState.GREEN  # if has_out_train else SignalState.RED
 
         if self.has_spawned_train is not None:
             if self.has_spawned_train.current_rail not in self.in_rails:
@@ -78,17 +82,28 @@ class OffMapDestination(Destination):
             ],
             out_rails=[
                 Rail(GridEdge(GridPoint(map, -2 * dx + x, y + dy * 2), GridPoint(map, -1 * dx + x, y + dy * 1)), is_destination=True),
-                Rail(GridEdge(GridPoint(map, -1 * dx + x, y + dy * 1), GridPoint(map, 0 * dx + x, y + dy * 0))),  # , signal_type=SignalType.TO
+                Rail(GridEdge(GridPoint(map, -1 * dx + x, y + dy * 1), GridPoint(map, 0 * dx + x, y + dy * 0)), signal_type=SignalType.TO, signal_state=SignalState.GREEN),
             ],
             name=name,
             marker_pos=map.grid_to_pos_float(-1 * dx + x, y - 1.5 + min(dx, 0) + dy),
             marker_icon=marker_icon,
         )
 
+    def is_highlighted(self):
+        map = self.in_rails[0].edge.map
+        return any(
+            isinstance(highlight, TutorialHighlightDestination) and highlight.name == self.name
+            for highlight in map.game_state.current_highlights())
+
     def render(self, graphics: GraphicsContext):
         # graphics.draw_circle("green", self.marker_pos, radius=10)
         # graphics.draw_text(self.name, self.marker_pos, "assets/font.ttf", 22, color=Colors.FONT)
-        with graphics.translate(self.marker_pos), graphics.scale_by(0.2):
+        scale = 0.2
+        if self.is_highlighted():
+            map = self.in_rails[0].edge.map
+            scale = map.game_state.add_highlight_to_scale(scale)
+
+        with graphics.translate(self.marker_pos), graphics.scale_by(scale):
             graphics.blit(self.marker_icon, self.marker_icon.get_rect(center=(0, 0)))
 
 
@@ -117,12 +132,13 @@ class Quests:
             1: 0,
             2: 3,
             3: 10,
-            4: 25,
+            4: 30,
             5: 40,
             6: 60,
             7: 80,
             9: 100,
             10: 120,
+            11: 150,
         }
         self.active_sources: list[OffMapDestination] = []
         self.active_destinations: list[Destination] = []
@@ -162,6 +178,20 @@ class Quests:
             new_sources.append(self.off_map_destinations["C"])  # have A, B, C, D, E, F fully, G out
         elif self.current_stage == 10:
             new_destinations.append(self.off_map_destinations["G"])  # have A, B, C, D, E, F, G fully
+        elif self.current_stage == 11:
+            self.map.game_state.message_queue.extend([
+                StoryMessage(
+                    lines=["congratulations, you have figured it out now!", "all stations are open and everything is running."],
+                    is_blocking=True,
+                    can_skip_tutorial=False,
+                ),
+                StoryMessage(
+                    lines=["thanks a lot for playing!",
+                           "keep going if you want to!"],
+                    is_blocking=True,
+                    can_skip_tutorial=False,
+                )
+            ])
         else:
             return False
 
@@ -177,6 +207,18 @@ class Quests:
             for rail in source.in_rails:
                 self.map.place_rail(rail)
             self.active_sources.append(source)
+
+        if self.current_stage >= 3:
+            # first two already have story
+            self.map.game_state.message_queue.extend([
+                StoryMessage(
+                    lines=["another station just opened up.", "extend your service as needed."],
+                    highlights=[TutorialHighlightDestination(name=destination.name) for destination in new_destinations + new_sources],
+                    is_blocking=False,
+                    auto_continue_with=story.all_stations_connected_somehow,
+                    can_skip_tutorial=False,
+                )]
+            )
 
         # resort the active sources
         self.active_sources = list(sorted(self.active_sources, key=lambda s: s.name))

@@ -15,6 +15,8 @@ from entity import Entity
 
 from graphics import GraphicsContext
 from math2d import rotate_90deg
+from tutorial_highlights import TutorialHighlightTrain, TutorialHighlightPhantomTrack, TutorialHighlightSignals, \
+    TutorialHighlightSwitches
 
 if TYPE_CHECKING:
     from quests import Destination
@@ -38,9 +40,11 @@ class GridPoint:
             if (dx_only is None or dx == dx_only)
         ]
 
-    def render_rail_tick(self, graphics: GraphicsContext, color: str):
+    def render_rail_tick(self, graphics: GraphicsContext, color: str, highlight: bool = False):
         pos = self.map.grid_to_pos(self)
         tick_length = 8.0
+        if highlight:
+            tick_length = self.map.game_state.add_highlight_to_scale(tick_length)
 
         neighbor_dx_dys = {
             (dx, dy)
@@ -120,12 +124,15 @@ class Rail(Entity):
         to_pos = self.edge.map.grid_to_pos(self.edge.to_point)
         return np.linalg.norm(to_pos - from_pos)
 
-    def render(self, graphics: GraphicsContext, color: str = Colors.TRACKS):
+    def render(self, graphics: GraphicsContext, color: str = Colors.TRACKS, highlight: bool = False):
         from_pos = self.edge.map.grid_to_pos(self.edge.from_point)
         to_pos = self.edge.map.grid_to_pos(self.edge.to_point)
-        self.edge.from_point.render_rail_tick(graphics, color=color)
-        self.edge.to_point.render_rail_tick(graphics, color=color)
-        graphics.draw_line(color, from_pos, to_pos, width=3)
+        self.edge.from_point.render_rail_tick(graphics, color=color, highlight=highlight)
+        self.edge.to_point.render_rail_tick(graphics, color=color, highlight=highlight)
+        width = 3
+        if highlight:
+            width = self.edge.map.game_state.add_highlight_to_scale(width)
+        graphics.draw_line(color, from_pos, to_pos, width=width)
         if self.signal_type != SignalType.NONE:
             self.render_signal(graphics)
 
@@ -177,7 +184,12 @@ class Rail(Entity):
         with graphics.translate(signal_pos):
             # graphics.draw_line(signal_color, [0.0, 0.0], arm, width=2)
             # graphics.draw_circle(signal_color, [0.0, 0.0], radius=5)
-            with graphics.scale_by(0.08):
+
+            scale = 0.08
+            map = self.edge.map
+            if any(isinstance(highlight, TutorialHighlightSignals) for highlight in map.game_state.current_highlights()) and map.is_point_on_map(self.edge.from_point) and map.is_point_on_map(self.edge.to_point):
+                scale = self.edge.map.game_state.add_highlight_to_scale(scale)
+            with graphics.scale_by(scale):
                 angle = math.atan2(-arm[1], -arm[0]) * 180 / math.pi + 90
                 img = {
                     SignalState.RED: Assets.SIGNAL_RED,
@@ -222,11 +234,19 @@ class Switch(Entity):
     dx: int
     dy: int
 
+    def is_highlight(self):
+        return any(isinstance(highlight, TutorialHighlightSwitches) for highlight in self.point.map.game_state.current_highlights())
+
     def render(self, graphics: GraphicsContext):
         pos = self.point.map.grid_to_pos(self.point)
         neighbor = GridPoint(self.point.map, self.point.x + self.dx, self.point.y + self.dy)
         other_pos = self.point.map.grid_to_pos(neighbor)
-        graphics.draw_line(Colors.SWITCH, pos, (pos + other_pos) / 2, width=6)
+
+        width = 6
+        if self.is_highlight():
+            width = self.point.map.game_state.add_highlight_to_scale(width)
+        graphics.draw_circle(Colors.SWITCH, pos, radius=width)
+        graphics.draw_line(Colors.SWITCH, pos, (pos + other_pos) / 2, width=width)
 
     def possible_dy_positions(self) -> list[int]:
         return [
@@ -255,7 +275,7 @@ class Train(Entity):
     max_popup_fadeout_time: float = 2.0
     popup_fadeout_time: float = max_popup_fadeout_time
 
-    def update(self, delta_time: float, real_delta_time: float):
+    def update(self, sim_delta_time: float, real_delta_time: float):
         next_rail = self.current_rail.next_rail(dx=self.dx)
         if next_rail is not None:
             if (self.current_rail.length - self.current_delta) <= TRAIN_STOP_DISTANCE:
@@ -269,7 +289,7 @@ class Train(Entity):
             red_signal = True  # no next rail, should stop
 
         if self.remaining_waiting_time > 0 and red_signal and self.current_speed <= 0.01 and next_rail is not None:
-            self.remaining_waiting_time -= delta_time
+            self.remaining_waiting_time -= sim_delta_time
             if self.remaining_waiting_time <= 0:
                 # will go now
                 self.remaining_waiting_time = 0.0
@@ -278,9 +298,9 @@ class Train(Entity):
             self.popup_fadeout_time -= real_delta_time
 
         target_speed = 0.0 if red_signal else self.max_speed
-        self.current_speed = clamp(self.current_speed + np.sign(target_speed - self.current_speed) * self.acceleration * delta_time, 0.0, self.max_speed)
+        self.current_speed = clamp(self.current_speed + np.sign(target_speed - self.current_speed) * self.acceleration * sim_delta_time, 0.0, self.max_speed)
 
-        self.current_delta += self.current_speed * delta_time
+        self.current_delta += self.current_speed * sim_delta_time
         while self.current_delta > self.current_rail.length:
             self.current_delta -= self.current_rail.length
             next_rail = self.current_rail.next_rail(dx=self.dx)
@@ -303,6 +323,13 @@ class Train(Entity):
         pos = edge_start_pos + (edge_end_pos - edge_start_pos) * (self.current_delta / self.current_rail.length)
         return pos
 
+    def is_highlighted(self):
+        map = self.current_rail.edge.map
+        return any(
+            isinstance(highlight, TutorialHighlightTrain) and highlight.i == map.trains.index(self)
+            for highlight in map.game_state.current_highlights()
+        )
+
     def render(self, graphics: GraphicsContext):
         pos = self.current_pos()
         # graphics.draw_circle(Colors.TRAIN, pos, 10)
@@ -317,7 +344,13 @@ class Train(Entity):
             dt = (self.current_delta / self.current_rail.length - turn_start_frac) / (1 - turn_start_frac)
             tangent = (1 - dt) * tangent + dt * next_tangent
 
-        with graphics.translate(pos), graphics.scale_by(0.05):
+        map = self.current_rail.edge.map
+        scale = 0.05
+        if self.is_highlighted():
+            scale = map.game_state.add_highlight_to_scale(scale)
+            self.popup_fadeout_time = self.max_popup_fadeout_time
+
+        with graphics.translate(pos), graphics.scale_by(scale):
             angle = math.atan2(-tangent[1], -tangent[0]) * 180 / math.pi + 180
             img = Assets.TRAIN
             if self.crashed:
@@ -337,6 +370,9 @@ class Train(Entity):
             return
         if self.popup_fadeout_time <= 0:
             return
+        if self.remaining_waiting_time >= self.max_waiting_time - 0.01:
+            return
+
         self.render_popup(graphics)
 
     def render_popup(self, graphics: GraphicsContext):
@@ -377,8 +413,13 @@ class Train(Entity):
             graphics.draw_line(Colors.POPUP_BORDER, from_point, to_point, width=3)
 
         # draw the destination icon
+        scale = 0.12
+        if self.is_highlighted():
+            map = self.current_rail.edge.map
+            scale = map.game_state.add_highlight_to_scale(scale)
+
         dest_icon = self.destination.marker_icon
-        with graphics.translate(box_offset + [popup_width / 2, popup_height / 2]), graphics.scale_by(0.12):
+        with graphics.translate(box_offset + [popup_width / 2, popup_height / 2]), graphics.scale_by(scale):
             graphics.blit(dest_icon, dest_icon.get_rect(center=(0, 0)))
 
 
@@ -402,6 +443,8 @@ class Map:
         self.trains: list[Train] = []
         self.simulation_speed = 1.0
 
+        self.any_switch_placed = False
+
     def grid_to_pos(self, point: GridPoint) -> np.ndarray:
         return point.x * self.RIGHT + point.y * self.DOWN
 
@@ -415,8 +458,12 @@ class Map:
         return xy
 
     def update(self, delta_time: float):
+        sim_delta_time = delta_time * self.simulation_speed
+        if self.game_state.game_over or (self.game_state.shown_message is not None and self.game_state.shown_message.is_blocking):
+            sim_delta_time = 0
+
         for train in self.trains:
-            train.update(delta_time * self.simulation_speed, real_delta_time=delta_time)
+            train.update(sim_delta_time, real_delta_time=delta_time)
 
         # check for explosion
         rails_to_trains = {}
@@ -437,6 +484,14 @@ class Map:
                 self.grid_to_pos(GridPoint(self, self.GRID_WIDTH - 1, self.GRID_HEIGHT - 1)),
                 self.grid_to_pos(GridPoint(self, 0, self.GRID_HEIGHT - 1)),
             ])
+
+        # phantom rails
+        for highlight in self.game_state.current_highlights():
+            if isinstance(highlight, TutorialHighlightPhantomTrack):
+                from_point = GridPoint(self, highlight.from_x, highlight.from_y)
+                to_point = GridPoint(self, highlight.to_x, highlight.to_y)
+                Rail(edge=GridEdge(from_point, to_point)).render(graphics, color=Colors.PHANTOM_TRACK, highlight=True)
+
         for rail in self.placed_rails.values():
             rail.render(graphics)
         for switch in self.switches.values():
@@ -477,6 +532,9 @@ class Map:
         # check junctions
         for rail in self.placed_rails.values():
             self.update_switches(rail)
+        if not self.any_switch_placed and len(self.switches) > 0:
+            self.any_switch_placed = True
+            self.game_state.on_first_switch_placed()
         # debug
         for rail in self.placed_rails.values():
             rail.next_rail(dx=-1)

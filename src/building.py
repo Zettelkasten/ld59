@@ -112,6 +112,8 @@ class DemolishRails(BuildingMode):
                     self.placement_start_point = None
                 for edge in edges:
                     if edge in map.placed_rails:
+                        if any(train.current_rail.edge == edge for train in map.trains):
+                            continue
                         map.remove_rail(edge)
 
 

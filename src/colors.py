@@ -11,6 +11,8 @@ class Colors:
     TRAIN = "#4BEDFF"
     TRAIN_CRASHED = "#FF2222"
 
+    PHANTOM_TRACK = "#FFD70055"
+
     BUILDING_SELECTED_POINT = "green"
     BUILDING_TRACK = "green"
     BUILDING_SIGNAL = "green"

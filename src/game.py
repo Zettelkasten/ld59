@@ -1,3 +1,4 @@
+import math
 import os
 import pickle
 
@@ -13,6 +14,7 @@ from graphics import GraphicsContext
 from map import Map, GridPoint, Rail, SignalType, Switch, Train
 from quests import Quests
 from story import StoryAssets, StoryMessage
+from tutorial_highlights import TutorialHighlightUI
 
 
 class GameState:
@@ -20,7 +22,9 @@ class GameState:
         self.score_correct_trains = 0
         self.supersampling = 2
         self.camera_scale = 1.0
-        self.camera_offset = np.asarray([100.0, 100.0])
+        self.extra_height = 25.0
+        self.camera_offset = np.asarray([100.0, 75.0 + self.extra_height])
+        self.font_size = 22
 
         self.mouse_pos = np.asarray([0.0, 0.0])
         self.ui_selected: int | None = None
@@ -39,6 +43,7 @@ class GameState:
         # self.quests.add_all()
 
         self.message_queue.extend(StoryAssets.INTRO)
+        self.tutorial_skipped = False
 
         # building mode
         self.building_mode = SwitchSignalsAndSwitches(self)
@@ -52,6 +57,25 @@ class GameState:
 
         # adjust camera scale to fit picture
         self.camera_scale = outer_surface.get_width() * self.supersampling / ((self.map.GRID_WIDTH + 3) * self.map.DIST)
+
+        # calculate extra height depending on the height of the screen
+        len_ratio = surface.get_width() / surface.get_height()
+        self.extra_height = 0.0
+        self.font_size = 22
+        if len_ratio < 1.7:
+            self.extra_height = 25.0
+        if len_ratio < 1.4:
+            self.extra_height = 50.0
+        if len_ratio < 1.3:
+            self.extra_height = 75.0
+            self.font_size = 18
+        if len_ratio < 1.2:
+            self.extra_height = 100.0
+        if len_ratio < 1.0:
+            self.extra_height = 125.0
+            self.font_size = 14
+
+        self.camera_offset = np.asarray([100.0, 75.0 + self.extra_height])
 
         graphics = GraphicsContext(surface)
         g = GraphicsContext(outer_surface)
@@ -87,28 +111,32 @@ class GameState:
             (Assets.UI_DEFAULT, Assets.UI_DEFAULT_ACTIVE, isinstance(self.building_mode, SwitchSignalsAndSwitches), 0.0, "set signals and switch track junctions"),
             (Assets.UI_TRACK,Assets.UI_TRACK_ACTIVE,  isinstance(self.building_mode, BuildRails), 100.0, "lay some track"),
             (Assets.UI_SIGNAL, Assets.UI_SIGNAL_ACTIVE, isinstance(self.building_mode, BuildSignals), 100.0, "build and remove signals"),
-            (Assets.UI_DEMOLISH, Assets.UI_DEMOLISH_ACTIVE, False, 120.0, "demolish some track"),
+            (Assets.UI_DEMOLISH, Assets.UI_DEMOLISH_ACTIVE, isinstance(self.building_mode, DemolishRails), 120.0, "demolish some track"),
             (Assets.UI_SLOW, Assets.UI_FAST, is_fast, 120.0, "back to slow" if is_fast else "fast-forward the game"),
             (Assets.UI_PLAY if not is_blocked else Assets.UI_PAUSE, Assets.UI_PAUSE, is_paused, 100.0, ("resume" if is_paused else "pause") if not is_blocked else "(un)pause game here later"),
         ]
         total_width = sum(button_width for _, _, _, button_width, _ in uis)
 
         self.ui_selected = None
-        if not self.game_over:
-            with graphics.translate([(width - total_width) / 2, height - 100]):
+        if not self.game_over and not (self.shown_message is not None and self.shown_message.hides_ui):
+            with graphics.translate([(width - total_width) / 2, height - 75 - self.extra_height]):
                 offset_x = 0
                 for i, (ui, active_ui, is_active, button_width, _) in enumerate(uis):
+                    scale = 0.15
+                    if any(isinstance(highlight, TutorialHighlightUI) and highlight.ui_index == i for highlight in self.current_highlights()):
+                        # tutorial highlight
+                        scale = self.add_highlight_to_scale(scale)
                     offset_x += button_width
-                    with graphics.translate([offset_x, 0]), graphics.scale_by(0.15):
+                    with graphics.translate([offset_x, 0]), graphics.scale_by(scale):
                         if graphics.is_in_area(self.mouse_pos, ui.get_rect(center=(0, 0))):
                             self.ui_selected = i
                         if is_active or self.ui_selected == i:
                             ui = active_ui
                             # ui.fill(active_color, special_flags=pygame.BLEND_RGBA_MULT)
                         graphics.blit(ui, dest=ui.get_rect(center=(0, 0)))
-        else:
+        elif self.game_over:
             # game over, render restart button
-            drawn_font = graphics.draw_text("Click here to try again", pos=np.asarray([width / 2, height - 100]), font_name="assets/font.ttf", font_size=22, color="white", align="center")
+            drawn_font = graphics.draw_text("click here to try again", pos=np.asarray([width / 2, height - 100]), font_name="assets/font.ttf", font_size=self.add_highlight_to_scale(self.font_size), color="white", align="center")
             if graphics.is_in_area(self.mouse_pos, drawn_font.get_rect(center=(width / 2, height - 100))):
                 self.ui_selected = 0
 
@@ -118,55 +146,55 @@ class GameState:
             title_text = tooltip
         if self.game_over:
             title_text = "game over! your trains have crashed!"
-        graphics.draw_text(title_text, pos=np.asarray([width / 2, 50]), font_name="assets/font.ttf", font_size=22, color="white")
+        graphics.draw_text(title_text, pos=np.asarray([width / 2, 50]), font_name="assets/font.ttf", font_size=self.font_size, color="white")
         to_next_level = self.quests.score_needed_for_next_level()
         if to_next_level is None:
             to_next_level_text = "max level reached!"
         else:
             to_next_level_text = f"{to_next_level} more for next level"
         graphics.draw_text(
-            to_next_level_text, pos=np.asarray([width - 100 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="right")
+            to_next_level_text, pos=np.asarray([width - 100 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=self.font_size, color="white", align="right")
         graphics.draw_text(
-            f"score: {self.score_correct_trains}", pos=np.asarray([100 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="left")
+            f"score: {self.score_correct_trains}", pos=np.asarray([100 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=self.font_size, color="white", align="left")
 
         self.story_message_selected = False
-        if self.shown_message is not None:
-            has_continue_button = self.shown_message.complete_with is None
-            pos = np.asarray([width / 2, height - 200])
+        if self.shown_message is not None and not self.game_over:
+            has_continue_button = self.shown_message.auto_continue_with is None
+            pos = np.asarray([width / 2, height - 175 - self.extra_height])
             assert len(self.shown_message.lines) > 0
             surface = None
             for line in self.shown_message.lines:
                 surface = graphics.draw_text(
-                    line, pos=pos, font_name="assets/font.ttf", font_size=22, color="white")
+                    line, pos=pos, font_name="assets/font.ttf", font_size=self.font_size, color="white")
                 pos[1] += surface.get_height() / graphics.scale
                 if has_continue_button and graphics.is_in_area(self.mouse_pos, surface.get_rect(center=pos)):
                     self.story_message_selected = True
-            pos[1] -= surface.get_height() / graphics.scale
+            if len(self.shown_message.lines) >= 2:
+                pos[1] -= surface.get_height() / graphics.scale
             pos = np.asarray([width - 100 * self.camera_scale, pos[1]])
             if has_continue_button:
+                font_size = self.add_highlight_to_scale(self.font_size)
                 surface = graphics.draw_text(
-                    "continue", pos=pos, font_name="assets/font.ttf", font_size=22, color="white", align="right"
+                    "continue", pos=pos, font_name="assets/font.ttf", font_size=font_size, color="white", align="right"
                 )
                 if graphics.is_in_area(self.mouse_pos, surface.get_rect(center=pos)):
                     self.story_message_selected = True
             pos[0] = 100 * self.camera_scale
             if self.shown_message.can_skip_tutorial:
                 surface = graphics.draw_text(
-                    "skip tutorial", pos=pos, font_name="assets/font.ttf", font_size=22, color="white", align="left"
+                    "skip tutorial", pos=pos, font_name="assets/font.ttf", font_size=self.font_size, color="white", align="left"
                 )
                 if graphics.is_in_area(self.mouse_pos, surface.get_rect(center=pos)):
                     self.story_message_selected = "skip"
 
     def update(self, delta_time: float):
         self.global_time += delta_time
-        if self.shown_message is not None and self.shown_message.complete_with is not None and self.shown_message.complete_with(self):
+        if self.shown_message is not None and self.shown_message.auto_continue_with is not None and self.shown_message.auto_continue_with(self):
             self.shown_message = None
         if len(self.message_queue) > 0 and self.shown_message is None:
             next_message = self.message_queue[0]
             if next_message.wait_for is None or next_message.wait_for(self):
                 self.shown_message = self.message_queue.pop(0)
-        if self.game_over or (self.shown_message is not None and self.shown_message.is_blocking):
-            return
         self.map.update(delta_time)
         self.quests.update(delta_time)
 
@@ -178,7 +206,8 @@ class GameState:
 
         if self.story_message_selected:
             if self.story_message_selected == "skip":
-                self.message_queue.clear()
+                self.message_queue = [m for m in self.message_queue if not m.can_skip_tutorial]
+                self.tutorial_skipped = True
             self.shown_message = None
 
         if not self.game_over:
@@ -194,10 +223,11 @@ class GameState:
                     self.building_mode = BuildSignals(self)
                 elif self.ui_selected == 3:
                     self.building_mode = DemolishRails(self)
-                elif self.ui_selected == 4:
+                elif self.ui_selected == 4 and not (self.shown_message is not None and self.shown_message.is_blocking):
                     self.map.simulation_speed = 8.0 if self.map.simulation_speed == 1.0 else 1.0
                 elif self.ui_selected == 5:
-                    self.map.simulation_speed = 0.0 if self.map.simulation_speed != 0.0 else 1.0
+                    if not (self.shown_message is not None and self.shown_message.is_blocking):
+                        self.map.simulation_speed = 0.0 if self.map.simulation_speed != 0.0 else 1.0
             else:
                 self.reset_game()
 
@@ -259,6 +289,7 @@ class GameState:
     def on_key_down(self, event):
         if self.game_over:
             return
+        blocking = self.shown_message is not None and self.shown_message.is_blocking
         if event.key == pygame.K_ESCAPE:
             self.on_escape()
         elif event.key == pygame.K_q or event.key == pygame.K_1:
@@ -269,14 +300,12 @@ class GameState:
             self.building_mode = BuildSignals(self)
         elif event.key == pygame.K_r or event.key == pygame.K_4:
             self.building_mode = DemolishRails(self)
-        elif event.key == pygame.K_t or event.key == pygame.K_5 or event.key == pygame.K_SPACE:
-            self.map.simulation_speed = 0.0 if self.map.simulation_speed != 0.0 else 1.0
-        elif event.key == pygame.K_y or event.key == pygame.K_z or event.key == pygame.K_6:
+        elif (event.key == pygame.K_t or event.key == pygame.K_5) and not blocking:
             self.map.simulation_speed = 8.0 if self.map.simulation_speed == 1.0 else 1.0
-        elif event.key == pygame.K_s and (pygame.key.get_mods() & pygame.KMOD_CTRL):
-            self.save_map()
-        elif event.key == pygame.K_r and (pygame.key.get_mods() & pygame.KMOD_CTRL):
-            self.reset_map()
+        elif (event.key == pygame.K_y or event.key == pygame.K_z or event.key == pygame.K_6 or event.key == pygame.K_SPACE) and not blocking:
+            self.map.simulation_speed = 0.0 if self.map.simulation_speed != 0.0 else 1.0
+        elif event.key == pygame.K_SPACE and self.shown_message is not None and self.shown_message.auto_continue_with is None:
+            self.shown_message = None  # skip message
 
     def on_escape(self):
         self.building_mode.__init__(self)
@@ -299,6 +328,23 @@ class GameState:
         self.map.simulation_speed = 0
         pos = (train.current_pos() + other_train.current_pos()) / 2
         self.play_explosion_pos = pos
+
+    def on_first_switch_placed(self):
+        if self.tutorial_skipped:
+            return
+        if self.shown_message is not None:
+            self.message_queue = [self.shown_message] + self.message_queue
+            self.shown_message = None
+        self.message_queue = StoryAssets.SWITCH_PLACED + self.message_queue
+
+    def current_highlights(self):
+        if self.shown_message is not None:
+            return self.shown_message.highlights
+        else:
+            return []
+
+    def add_highlight_to_scale(self, scale):
+        return scale + math.sin(self.global_time * 10) * (0.02 * scale / 0.15)
 
     def save_map(self):
         print("saving")

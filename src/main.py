@@ -17,7 +17,7 @@ async def main():
     pygame.init()
     pygame.font.init()
 
-    screen = pygame.display.set_mode((1000, 650), pygame.RESIZABLE)
+    screen = pygame.display.set_mode((1200, 700), pygame.RESIZABLE)
     clock = pygame.time.Clock()
 
     game_state = GameState()
