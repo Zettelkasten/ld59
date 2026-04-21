@@ -12,6 +12,7 @@ from colors import Colors, Assets
 from graphics import GraphicsContext
 from map import Map, GridPoint, Rail, SignalType, Switch, Train
 from quests import Quests
+from story import StoryAssets, StoryMessage
 
 
 class GameState:
@@ -26,16 +27,21 @@ class GameState:
 
         self.map = Map(self)
         self.game_over = False
+        self.shown_message: StoryMessage | None = None
+        self.story_message_selected = False
         self.play_explosion_pos: None | np.ndarray = None
 
         self.global_time = 0
 
         self.quests = Quests(self.map)
         self.quests.advance_stage()
+        self.message_queue = []
         # self.quests.add_all()
 
+        self.message_queue.extend(StoryAssets.INTRO)
+
         # building mode
-        self.building_mode = BuildRails(self)
+        self.building_mode = SwitchSignalsAndSwitches(self)
 
     def render(self, outer_surface: Surface):
         surface = pygame.Surface(np.asarray(outer_surface.get_size()) * self.supersampling, pygame.SRCALPHA)
@@ -74,15 +80,16 @@ class GameState:
         self.map.render_ui(graphics)
 
     def render_ui(self, graphics: GraphicsContext, width: float, height: float):
-        is_paused = self.map.simulation_speed == 0.0
+        is_blocked = self.shown_message is not None and self.shown_message.is_blocking
+        is_paused = self.map.simulation_speed == 0.0 or is_blocked
         is_fast = self.map.simulation_speed > 1.0
         uis = [
             (Assets.UI_DEFAULT, Assets.UI_DEFAULT_ACTIVE, isinstance(self.building_mode, SwitchSignalsAndSwitches), 0.0, "set signals and switch track junctions"),
             (Assets.UI_TRACK,Assets.UI_TRACK_ACTIVE,  isinstance(self.building_mode, BuildRails), 100.0, "lay some track"),
             (Assets.UI_SIGNAL, Assets.UI_SIGNAL_ACTIVE, isinstance(self.building_mode, BuildSignals), 100.0, "build and remove signals"),
             (Assets.UI_DEMOLISH, Assets.UI_DEMOLISH_ACTIVE, False, 120.0, "demolish some track"),
-            (Assets.UI_SLOW, Assets.UI_FAST, is_fast, 120.0, "back to slow" if is_fast else "speed up the game"),
-            (Assets.UI_PLAY, Assets.UI_PAUSE, is_paused, 100.0, "resume" if is_paused else "pause"),
+            (Assets.UI_SLOW, Assets.UI_FAST, is_fast, 120.0, "back to slow" if is_fast else "fast-forward the game"),
+            (Assets.UI_PLAY if not is_blocked else Assets.UI_PAUSE, Assets.UI_PAUSE, is_paused, 100.0, ("resume" if is_paused else "pause") if not is_blocked else "(un)pause game here later"),
         ]
         total_width = sum(button_width for _, _, _, button_width, _ in uis)
 
@@ -114,7 +121,7 @@ class GameState:
         graphics.draw_text(title_text, pos=np.asarray([width / 2, 50]), font_name="assets/font.ttf", font_size=22, color="white")
         to_next_level = self.quests.score_needed_for_next_level()
         if to_next_level is None:
-            to_next_level_text = "maximum level reached!"
+            to_next_level_text = "max level reached!"
         else:
             to_next_level_text = f"{to_next_level} more for next level"
         graphics.draw_text(
@@ -122,9 +129,43 @@ class GameState:
         graphics.draw_text(
             f"score: {self.score_correct_trains}", pos=np.asarray([100 * self.camera_scale, 50]), font_name="assets/font.ttf", font_size=22, color="white", align="left")
 
+        self.story_message_selected = False
+        if self.shown_message is not None:
+            has_continue_button = self.shown_message.complete_with is None
+            pos = np.asarray([width / 2, height - 200])
+            assert len(self.shown_message.lines) > 0
+            surface = None
+            for line in self.shown_message.lines:
+                surface = graphics.draw_text(
+                    line, pos=pos, font_name="assets/font.ttf", font_size=22, color="white")
+                pos[1] += surface.get_height() / graphics.scale
+                if has_continue_button and graphics.is_in_area(self.mouse_pos, surface.get_rect(center=pos)):
+                    self.story_message_selected = True
+            pos[1] -= surface.get_height() / graphics.scale
+            pos = np.asarray([width - 100 * self.camera_scale, pos[1]])
+            if has_continue_button:
+                surface = graphics.draw_text(
+                    "continue", pos=pos, font_name="assets/font.ttf", font_size=22, color="white", align="right"
+                )
+                if graphics.is_in_area(self.mouse_pos, surface.get_rect(center=pos)):
+                    self.story_message_selected = True
+            pos[0] = 100 * self.camera_scale
+            if self.shown_message.can_skip_tutorial:
+                surface = graphics.draw_text(
+                    "skip tutorial", pos=pos, font_name="assets/font.ttf", font_size=22, color="white", align="left"
+                )
+                if graphics.is_in_area(self.mouse_pos, surface.get_rect(center=pos)):
+                    self.story_message_selected = "skip"
+
     def update(self, delta_time: float):
         self.global_time += delta_time
-        if self.game_over:
+        if self.shown_message is not None and self.shown_message.complete_with is not None and self.shown_message.complete_with(self):
+            self.shown_message = None
+        if len(self.message_queue) > 0 and self.shown_message is None:
+            next_message = self.message_queue[0]
+            if next_message.wait_for is None or next_message.wait_for(self):
+                self.shown_message = self.message_queue.pop(0)
+        if self.game_over or (self.shown_message is not None and self.shown_message.is_blocking):
             return
         self.map.update(delta_time)
         self.quests.update(delta_time)
@@ -134,6 +175,11 @@ class GameState:
 
     def on_click(self, event: Event):
         self.mouse_pos = np.asarray(event.pos) * self.supersampling
+
+        if self.story_message_selected:
+            if self.story_message_selected == "skip":
+                self.message_queue.clear()
+            self.shown_message = None
 
         if not self.game_over:
             self.building_mode.on_click()

@@ -139,6 +139,7 @@ class BuildSignals(BuildingMode):
 
 class SwitchSignalsAndSwitches(BuildingMode):
     def __init__(self, game_state: "GameState"):
+        self.num_switches_clicked = 0
         self.game_state = game_state
 
     def render(self, graphics: GraphicsContext):
@@ -161,3 +162,4 @@ class SwitchSignalsAndSwitches(BuildingMode):
             switch = signal_or_switch
             possible_dys = switch.possible_dy_positions()
             switch.dy = possible_dys[(possible_dys.index(switch.dy) + 1) % len(possible_dys)]
+            self.num_switches_clicked += 1
